@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Christopher",
+  "version": "0.1.0",
+  "description": "Application copilot: extracts form questions, generates personalized answers with Claude, fills only what you approve.",
+  "permissions": ["activeTab", "scripting", "sidePanel"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "action": {}
+}
