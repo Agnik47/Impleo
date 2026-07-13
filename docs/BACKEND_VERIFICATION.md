@@ -1,6 +1,6 @@
 # BACKEND_VERIFICATION.md — Service Layer Verification
 
-Christopher has no traditional server, but `background.js` + `lib/storage.js`
+Impleo has no traditional server, but `background.js` + `lib/storage.js`
 play that role: they own the API key, make the only network calls, and hold
 persistent state. Treat them with the same rigor you'd give a real backend —
 this checklist is the thing standing between "looks like it works" and

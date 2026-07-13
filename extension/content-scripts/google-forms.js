@@ -29,8 +29,8 @@ export function extractGoogleForm() {
   let counter = 0;
   function stampId(elements) {
     counter += 1;
-    const id = `christopher-gf-${counter}`;
-    elements.forEach((el) => el.setAttribute('data-christopher-id', id));
+    const id = `impleo-gf-${counter}`;
+    elements.forEach((el) => el.setAttribute('data-impleo-id', id));
     return id;
   }
 
@@ -64,28 +64,28 @@ export function extractGoogleForm() {
     if (radios.length > 0) {
       const options = radios.map((r) => r.getAttribute('aria-label') || r.getAttribute('data-value') || textOf(r));
       const id = stampId(radios);
-      results.push({ id, questionText, fieldType: 'radio', options, required, selector: `[data-christopher-id="${id}"]` });
+      results.push({ id, questionText, fieldType: 'radio', options, required, selector: `[data-impleo-id="${id}"]` });
     } else if (checkboxes.length > 0) {
       const options = checkboxes.map(
         (c) => c.getAttribute('aria-label') || c.getAttribute('data-answer-value') || textOf(c)
       );
       const fieldType = checkboxes.length > 1 ? 'checkbox' : 'checkbox_single';
       const id = stampId(checkboxes);
-      results.push({ id, questionText, fieldType, options, required, selector: `[data-christopher-id="${id}"]` });
+      results.push({ id, questionText, fieldType, options, required, selector: `[data-impleo-id="${id}"]` });
     } else if (listboxes.length > 0) {
       const listbox = listboxes[0];
       const options = Array.from(listbox.querySelectorAll('[role="option"]')).map(textOf).filter(Boolean);
       const id = stampId([listbox]);
-      results.push({ id, questionText, fieldType: 'dropdown', options, required, selector: `[data-christopher-id="${id}"]` });
+      results.push({ id, questionText, fieldType: 'dropdown', options, required, selector: `[data-impleo-id="${id}"]` });
     } else if (textareas.length > 0) {
       const id = stampId([textareas[0]]);
-      results.push({ id, questionText, fieldType: 'textarea', options: [], required, selector: `[data-christopher-id="${id}"]` });
+      results.push({ id, questionText, fieldType: 'textarea', options: [], required, selector: `[data-impleo-id="${id}"]` });
     } else if (fileInputs.length > 0) {
       const id = stampId([fileInputs[0]]);
-      results.push({ id, questionText, fieldType: 'upload', options: [], required, selector: `[data-christopher-id="${id}"]` });
+      results.push({ id, questionText, fieldType: 'upload', options: [], required, selector: `[data-impleo-id="${id}"]` });
     } else if (textInputs.length > 0) {
       const id = stampId([textInputs[0]]);
-      results.push({ id, questionText, fieldType: 'text', options: [], required, selector: `[data-christopher-id="${id}"]` });
+      results.push({ id, questionText, fieldType: 'text', options: [], required, selector: `[data-impleo-id="${id}"]` });
     }
   }
 

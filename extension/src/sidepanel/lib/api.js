@@ -28,6 +28,12 @@ export const api = {
     }),
   testApiKey: (provider, apiKey, model) =>
     request('/api/test-key', { method: 'POST', body: JSON.stringify({ provider, apiKey, model }) }),
+  exportProfile: () => request('/api/export'),
+  importProfile: (envelope, opts) =>
+    request('/api/import', {
+      method: 'POST',
+      body: JSON.stringify({ ...envelope, dryRun: Boolean(opts?.dryRun) }),
+    }),
   getQaHistory: () => request('/api/qa-history'),
   appendQaHistory: (entry) =>
     request('/api/qa-history', { method: 'POST', body: JSON.stringify(entry) }),

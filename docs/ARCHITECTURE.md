@@ -1,4 +1,4 @@
-# ARCHITECTURE.md — Christopher
+# ARCHITECTURE.md — Impleo
 
 ## Guiding principle
 

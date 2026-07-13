@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../lib/api.js';
+import ImportProfileModal from './ImportProfileModal.jsx';
 
 const emptyForm = {
   personal: { name: '', email: '', phone: '', location: '' },
@@ -56,16 +57,27 @@ function formStateToProfile(form) {
   };
 }
 
-function Field({ label, children }) {
+function Section({ label, hint, children }) {
   return (
-    <section className="space-y-1">
-      <h2 className="font-medium text-slate-700">{label}</h2>
+    <section className="min-w-0 space-y-2 rounded-card border border-surface-border bg-surface-card p-3 shadow-soft-sm">
+      <h2 className="break-words text-card text-ink-primary">{label}</h2>
+      {hint && <p className="break-words text-caption text-ink-muted">{hint}</p>}
       {children}
     </section>
   );
 }
 
-const inputClass = 'w-full rounded border border-slate-300 px-2 py-1 text-sm';
+function Field({ label, children }) {
+  return (
+    <section className="min-w-0 space-y-1.5 rounded-card border border-surface-border bg-surface-card p-3 shadow-soft-sm">
+      <h2 className="break-words text-card text-ink-primary">{label}</h2>
+      {children}
+    </section>
+  );
+}
+
+const inputClass =
+  'w-full rounded-input border border-surface-border bg-surface-bg px-2.5 py-1.5 text-body text-ink-primary placeholder:text-ink-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand transition-colors duration-150';
 
 // Per-provider hints for the key input placeholder — just a nudge on what a
 // given vendor's key looks like, not validation.
@@ -97,7 +109,36 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
 
+  // Profile backup. Export stays inline (a single click, no confirmation needed —
+  // it's non-destructive). Import opens ImportProfileModal, which owns its own
+  // upload/validate/confirm state; it just calls onImported (== onSaved) when done.
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const busy = saving || exporting;
+
   const providerLabel = providers.find((p) => p.id === provider)?.label || provider;
+
+  async function handleExport() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const envelope = await api.exportProfile();
+      const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `impleo-profile-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function updateField(section, field, value) {
     setForm((prev) =>
@@ -173,16 +214,44 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
   }
 
   return (
-    <form onSubmit={handleSave} className="mx-auto max-w-xl space-y-6 p-4 text-sm">
-      <h1 className="text-lg font-semibold">Set up your profile</h1>
+    <form onSubmit={handleSave} className="mx-auto w-full max-w-[500px] space-y-3 p-3 sm:p-4">
+      <div className="flex min-w-0 items-center gap-2 pb-1">
+        <img src="./icons/icon-32.png" alt="" className="h-6 w-6 shrink-0" />
+        <h1 className="truncate text-title text-ink-primary">Set up your profile</h1>
+      </div>
 
-      <section className="space-y-2">
-        <h2 className="font-medium text-slate-700">AI provider</h2>
-        <p className="text-xs text-slate-400">
-          Pick which provider to use — you only need a key for this one. Use
-          whichever you have free-tier access to (e.g. a free Google Gemini key
-          works if you don't want to pay for API usage).
+      <Section label="Backup" hint="Export a copy of your profile and saved Q&A, or import one from a file.">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={!initialProfile || busy}
+            className="shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50"
+          >
+            {exporting ? 'Exporting…' : 'Export profile'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setImportModalOpen(true)}
+            disabled={busy}
+            className="shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50"
+          >
+            Import profile
+          </button>
+        </div>
+        <p className="text-caption text-ink-muted">
+          Exported files contain your profile in plain text, including personal info — handle
+          them like a resume.
         </p>
+
+        {exportError && (
+          <div className="min-w-0 break-words rounded-card border border-red-900/50 bg-red-950/30 p-2.5 text-body text-red-300">
+            {exportError}
+          </div>
+        )}
+      </Section>
+
+      <Section label="AI provider" hint="Pick which provider to use — you only need a key for this one. Use whichever you have free-tier access to (e.g. a free Google Gemini key works if you don't want to pay for API usage).">
         <select
           className={inputClass}
           value={provider}
@@ -207,7 +276,7 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
           onChange={(e) => setApiKey(e.target.value)}
         />
         {savedKeyProviders.has(provider) && !apiKey && (
-          <p className="text-xs text-green-700">A key is already saved for {providerLabel}.</p>
+          <p className="text-caption text-brand">A key is already saved for {providerLabel}.</p>
         )}
         <input
           className={inputClass}
@@ -215,58 +284,58 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
           value={model}
           onChange={(e) => setModel(e.target.value)}
         />
-        <p className="text-xs text-slate-400">
+        <p className="text-caption text-ink-muted">
           Any model id your {providerLabel} account has access to — check your
           provider's pricing/docs page for which models are free-tier. This is
           only a suggested starting point, not enforced.
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={handleTestKey}
             disabled={testing}
-            className="rounded bg-slate-200 px-3 py-1 hover:bg-slate-300 disabled:opacity-50"
+            className="shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50"
           >
             {testing ? 'Testing…' : 'Test key'}
           </button>
           {keyStatus && (
-            <span className={keyStatus.state === 'error' ? 'text-red-600' : 'text-green-700'}>
+            <span className={`min-w-0 break-words text-body ${keyStatus.state === 'error' ? 'text-red-400' : 'text-brand'}`}>
               {keyStatus.message}
             </span>
           )}
         </div>
-      </section>
+      </Section>
 
-      <section className="grid grid-cols-2 gap-2">
-        <h2 className="col-span-2 font-medium text-slate-700">Personal info</h2>
-        <input
-          className={inputClass}
-          placeholder="Name"
-          value={form.personal.name}
-          onChange={(e) => updateField('personal', 'name', e.target.value)}
-        />
-        <input
-          className={inputClass}
-          placeholder="Email"
-          value={form.personal.email}
-          onChange={(e) => updateField('personal', 'email', e.target.value)}
-        />
-        <input
-          className={inputClass}
-          placeholder="Phone"
-          value={form.personal.phone}
-          onChange={(e) => updateField('personal', 'phone', e.target.value)}
-        />
-        <input
-          className={inputClass}
-          placeholder="Location"
-          value={form.personal.location}
-          onChange={(e) => updateField('personal', 'location', e.target.value)}
-        />
-      </section>
+      <Section label="Personal info">
+        <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
+          <input
+            className={inputClass}
+            placeholder="Name"
+            value={form.personal.name}
+            onChange={(e) => updateField('personal', 'name', e.target.value)}
+          />
+          <input
+            className={inputClass}
+            placeholder="Email"
+            value={form.personal.email}
+            onChange={(e) => updateField('personal', 'email', e.target.value)}
+          />
+          <input
+            className={inputClass}
+            placeholder="Phone"
+            value={form.personal.phone}
+            onChange={(e) => updateField('personal', 'phone', e.target.value)}
+          />
+          <input
+            className={inputClass}
+            placeholder="Location"
+            value={form.personal.location}
+            onChange={(e) => updateField('personal', 'location', e.target.value)}
+          />
+        </div>
+      </Section>
 
-      <section className="space-y-2">
-        <h2 className="font-medium text-slate-700">Links</h2>
+      <Section label="Links">
         <input
           className={inputClass}
           placeholder="LinkedIn URL"
@@ -285,7 +354,7 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
           value={form.links.portfolio}
           onChange={(e) => updateField('links', 'portfolio', e.target.value)}
         />
-      </section>
+      </Section>
 
       <Field label="Education (one entry per line)">
         <textarea
@@ -328,7 +397,7 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
           value={form.projects}
           onChange={(e) => updateField(null, 'projects', e.target.value)}
         />
-        <p className="text-xs text-slate-400">
+        <p className="text-caption text-ink-muted">
           Don't use "|" inside a field's own text — it's the column separator.
         </p>
       </Field>
@@ -360,15 +429,26 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
         />
       </Field>
 
-      {saveError && <p className="text-red-600">{saveError}</p>}
+      {saveError && (
+        <div className="min-w-0 break-words rounded-card border border-red-900/50 bg-red-950/30 p-2.5 text-body text-red-300">
+          {saveError}
+        </div>
+      )}
 
       <button
         type="submit"
-        disabled={saving}
-        className="w-full rounded bg-slate-900 px-3 py-2 font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+        disabled={busy}
+        className="w-full rounded-btn bg-brand px-3 py-2 text-body font-medium text-jungle shadow-soft-sm transition-colors duration-150 hover:bg-brand-hover disabled:opacity-50"
       >
         {saving ? 'Saving…' : 'Save profile'}
       </button>
+
+      <ImportProfileModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        currentProfile={initialProfile}
+        onImported={onSaved}
+      />
     </form>
   );
 }

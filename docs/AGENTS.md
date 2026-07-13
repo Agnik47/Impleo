@@ -1,4 +1,4 @@
-# AGENTS.md — Instructions for AI coding agents working on Christopher
+# AGENTS.md — Instructions for AI coding agents working on Impleo
 
 This file is read automatically by Claude Code and similar agents. Follow it
 literally. When in doubt, prefer the simpler option — this is a 2-day personal

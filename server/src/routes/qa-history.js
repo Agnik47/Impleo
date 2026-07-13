@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 
 const router = Router();
-const MAX_ENTRIES = 50;
+export const MAX_ENTRIES = 50;
 
 router.get('/', (req, res) => {
   const rows = db

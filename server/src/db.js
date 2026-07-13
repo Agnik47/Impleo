@@ -7,7 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, '..', 'data');
 mkdirSync(dataDir, { recursive: true });
 
-export const db = new Database(join(dataDir, 'christopher.db'));
+export const db = new Database(join(dataDir, 'impleo.db'));
 db.pragma('journal_mode = WAL');
 
 db.exec(`

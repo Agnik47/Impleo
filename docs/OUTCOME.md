@@ -488,3 +488,735 @@ introduced by mishearing, not a considered design choice.
    mind if a future provider mixup happens again: the error message a user
    sees may not obviously say "you have the wrong service," just a generic
    auth/network failure.
+
+---
+
+### "Accept all high/mid" bulk-approve button — 2026-07-13
+
+**What was built:**
+Founder reported having to accept every field one-by-one is tedious.
+Added a one-click bulk-approve to `extension/src/sidepanel/ReviewFlow.jsx`:
+a `handleAcceptAll()` function that walks `formSchema` and flips any field
+still in `status: 'pending'` with `confidence: 'high'` or `'medium'`
+(the existing per-field confidence badge already computed in
+`generateAnswers`/`ReviewCard.jsx`) to `status: 'accepted'`, leaving
+already-edited/skipped fields and low-confidence fields untouched so they
+still require individual review. Wired to a new button, "Accept all
+high/mid (N)", placed next to "Start over" in the reviewing-phase header
+bar; N is a live count (`acceptAllCount`) of eligible pending fields, and
+the button disables at N=0 or while `phase === 'filling'`. No new
+component, no change to `ReviewCard.jsx`, no server/API changes — purely
+client-side state logic reusing the existing `updateReview`-style pattern
+(implemented inline via `setReviewState` instead of calling `updateReview`
+in a loop, to batch all updates into a single state transition).
+
+**Verified against:**
+Static/logical review only — no build/browser run this session, per the
+founder's standing "write first, I'll run it" preference
+([[feedback_verification_handoff]]). Not yet confirmed against a running
+extension.
+
+**Acceptance criterion met?** No — code-complete by inspection only. Owed:
+`cd extension && npm run build`, reload unpacked, run a real
+extract-and-generate pass on a form with a mix of confidence levels, click
+"Accept all high/mid", and confirm only high/medium-confidence pending
+fields flip to accepted (green border) while low-confidence and
+already-touched fields are unaffected.
+
+**Deviations from spec:**
+None — additive UI feature, doesn't touch any hard rule (still requires
+the review step before fill; "accept all" only marks fields as approved,
+it does not fill or submit anything itself).
+
+**Known issues / follow-ups:**
+1. Unexecuted — same manual verification gap as recent entries above.
+2. "High/mid" threshold is hardcoded to the two confidence labels; if the
+   confidence taxonomy ever changes (e.g. a numeric score instead of
+   high/medium/low strings) this logic needs updating alongside
+   `ReviewCard.jsx`'s `confidenceStyles` map, which is the other place that
+   assumes exactly these three string values.
+
+---
+
+### Impleo rebrand — dark theme redesign + extension icon — 2026-07-13
+
+**What was built:**
+Founder pointed at `docs/Impleo_Brand_Guide.md` (new file, not previously
+referenced in AGENTS.md/PRD.md) and `extension/icons/iconImg.png` (a
+1024x1024 RGBA source image, not previously wired into the build) and asked
+for a full redesign plus icon/name change. Followed the `frontend-design`
+skill's Step 0 (extend existing system) since the brand guide already fully
+specifies tokens — no new design language was invented.
+- `extension/icons/`: generated `icon-16.png`, `icon-32.png`, `icon-48.png`,
+  `icon-128.png` from `iconImg.png` via Python PIL (Lanczos resample) — no
+  new npm dependency added for this (no `sharp`/image lib in `package.json`).
+- `manifest.json`: `name` changed `"Christopher"` → `"Impleo"`, added
+  `icons` and `action.default_icon`/`default_title` (previously `action: {}`
+  had no icon at all — Chrome was showing a generic puzzle-piece icon).
+- `vite.config.js`: added the four icon files to the existing
+  `vite-plugin-static-copy` targets (`dest: 'icons'`) — they weren't copied
+  to `dist/` before this change.
+- `index.html`: title → "Impleo", added a favicon `<link>` for the side
+  panel's own tab/DevTools context.
+- `tailwind.config.js`: replaced the empty `theme.extend` with the brand
+  guide's tokens verbatim — `brand`/`brand-hover` (primary/secondary green),
+  `jungle`, `lime`, `signature`, `cream`, a `surface.*` dark-theme palette
+  (bg/sidebar/card/card-hover/border) and `ink.*` text colors (all exact
+  hex values from the guide), `fontSize` scale matching the guide's
+  18/14/13/12/11px named sizes (`title`/`card`/`body`/`meta`/`caption`),
+  `borderRadius.card|btn|input` (12/10/10px), `boxShadow.soft`/`soft-sm`,
+  and a `fontFamily.sans` stack starting `Geist, Inter, ...system fallbacks`
+  — Geist/Inter aren't bundled as font files (would've meant adding a new
+  dependency, which `AGENTS.md` says to ask about first), so on a machine
+  without those fonts installed the stack silently falls through to the
+  system-ui fallbacks; visually close but not pixel-identical to real Geist.
+  `darkMode: 'class'` added but unused — the guide doesn't describe a light
+  theme or a toggle, so the whole side panel is unconditionally dark rather
+  than switchable.
+- `index.css`: dark app shell (`bg-surface-bg`, `font-sans`, `text-body`),
+  fixed `width: 380px` (a reasonable Chrome side-panel width, not specified
+  by the guide), custom scrollbar styling.
+- `App.jsx`, `ReviewFlow.jsx`, `components/ReviewCard.jsx`,
+  `components/Onboarding.jsx`: full visual pass onto the new tokens —
+  card/border/radius/shadow system, brand-green primary buttons with dark
+  (`text-jungle`) text for contrast against the bright green, confidence
+  badges recolored (high=brand green, medium=signature yellow, low=red —
+  red isn't in the guide's palette, kept as the only sensible semantic
+  danger color since the guide doesn't define one), status border colors
+  (accepted=brand green, edited=lime, per the guide's stated usage for
+  those two colors), header now shows the `icon-32.png` mascot next to the
+  "Impleo" title. All logic (accept/edit/skip/regenerate/accept-all/fill,
+  provider settings, profile fields) is unchanged — this was styling only.
+
+**Verified against:**
+`cd extension && npm run build` — ran for real this time (not skipped per
+the usual "write first, founder runs it" preference, since a build-only
+check doesn't touch app behavior/data): completed cleanly, 39 modules
+transformed, and confirmed by listing `dist/` that all 4 icon sizes,
+`manifest.json`, and `background.js` land in the right place
+(`dist/icons/icon-{16,32,48,128}.png` alongside `index.html`). Grepped the
+whole `extension/` tree for the string "Christopher" post-rename: no hits
+left. **Not verified**: loading the unpacked extension in
+`chrome://extensions` to visually confirm colors/contrast/icon rendering,
+or that Geist/Inter's fallback stack actually looks acceptable on the
+founder's machine.
+
+**Acceptance criterion met?** Partial. Build-verified (compiles, files land
+correctly), not visually verified in a real browser.
+
+**Deviations from spec:**
+- Whole-app dark theme instead of a light/dark toggle — the guide only
+  specifies one "Dark Theme" section and no light-mode tokens, so this
+  reads as the intended single theme, not a partial implementation.
+- Package name in `extension/package.json` (`"christopher-extension"`) was
+  left unchanged — that's an internal npm package identifier, not
+  user-visible branding (Chrome shows `manifest.json`'s `name`, which was
+  changed), so renaming it seemed out of scope for a branding request.
+- Geist font not actually bundled (see above) — approximated via fallback
+  stack rather than adding a font-loading dependency without asking first.
+
+**Known issues / follow-ups:**
+1. Owed: `chrome://extensions` → reload unpacked from `extension/dist` →
+   visually confirm the icon renders correctly at toolbar size, the side
+   panel's dark theme has no unreadable text/contrast issues, and the
+   native `<select>` dropdown's option-list styling (which CSS can't fully
+   theme cross-platform) doesn't look jarring against the dark surrounding
+   UI.
+2. If the founder wants pixel-accurate Geist rendering, bundling the actual
+   font files (or a `@fontsource/geist` dependency) is a follow-up ask, not
+   done here.
+3. `iconImg.png` (the original 1024x1024 source, ~1MB) is left in
+   `extension/icons/` alongside the four generated sizes — harmless (not
+   referenced by the manifest or shipped-relevant paths outside `dist/`,
+   which vite only copies the 4 named sizes from), but worth deleting if
+   repo size becomes a concern.
+
+---
+
+### Responsiveness pass — fluid layout for 320-500px panel widths — 2026-07-13
+
+**What was built:**
+Founder filed a 9-point responsiveness spec (horizontal overflow, fixed
+widths, action-button overflow, long-text handling, card layout at
+320-500px, toolbar crowding, target width 400-440px, mobile-first
+philosophy, performance). Addressed each:
+- `index.css`: dropped the hardcoded `width: 380px` on `body` — replaced
+  with `width: 100%; min-width: 320px; max-width: 500px;` plus
+  `overflow-wrap: break-word` and `#root { min-width: 0 }` (needed because
+  a flex/grid descendant chain without `min-width: 0` at each level ignores
+  `max-width` on an ancestor and overflows instead of wrapping).
+- `App.jsx`, `ReviewFlow.jsx`, `Onboarding.jsx`: each top-level view now
+  wraps its content in `mx-auto w-full max-w-[500px]`, so the layout is
+  fluid at any panel width up to 500px rather than assuming full desktop
+  width. `Header` wraps (`flex-wrap`) and truncates the title instead of
+  overflowing if "Settings" + "Impleo" can't fit on one line.
+- `components/Onboarding.jsx`: the 2-column personal-info grid now starts
+  at `grid-cols-1` and only switches to `grid-cols-2` at
+  `min-[380px]:` (an arbitrary-value Tailwind media variant, confirmed in
+  the compiled CSS to emit a real `@media (min-width:380px)` rule — no new
+  dependency, no custom `tailwind.config.js` breakpoint needed for a single
+  one-off use). Added `min-w-0`/`break-words` to section labels, hints, the
+  "Test key" status message, and the save-error banner, all of which could
+  previously force horizontal overflow with a long enough string (e.g. a
+  verbose provider error message).
+- `components/ReviewCard.jsx` — the most crowded surface, rewritten:
+  - Action row (`Accept | Edit | Regenerate | Skip`) split into a primary
+    row (`Accept`, `Edit`/`Save`, `Skip`) with small inline-SVG icons (no
+    icon library dependency) plus short labels, and a secondary row
+    (`Regenerate` + the instruction input) collapsed behind a "more actions"
+    toggle button (kebab icon) — this is an always-collapsed-by-default
+    disclosure rather than a JS/`ResizeObserver`-driven "only collapse when
+    actually constrained" version; simpler, no measurement code, and stays
+    compact at every width in the 320-500px range rather than only below a
+    guessed breakpoint. Both rows use `flex-wrap`.
+  - Long AI-generated answers: `line-clamp-4` (Tailwind's built-in
+    utility, confirmed compiled without needing the `@tailwindcss/
+    line-clamp` plugin — v3.4's core already includes it) plus a
+    "Show more"/"Show less" toggle, gated on answer length
+    (`ANSWER_CLAMP_THRESHOLD = 220` chars) rather than always clamping.
+  - `min-w-0`/`break-words`/`whitespace-pre-wrap` added throughout
+    (question text, answer text, choice-option labels, fill-result text) so
+    a single long unbroken token (URL, etc.) wraps instead of forcing the
+    card wider than its container.
+  - Wrapped the component in `React.memo`.
+- `ReviewFlow.jsx` — for `React.memo` on `ReviewCard` to actually skip
+  re-renders (previously every card got a freshly-allocated
+  `() => updateReview(...)` arrow function as a prop on every
+  `ReviewFlow` render, which defeats memoization regardless of the child
+  being memoized), refactored `onAccept`/`onEdit`/`onSkip`/`onRegenerate`
+  from per-card inline closures into stable `useCallback`-wrapped
+  functions taking an explicit `id` (or `question`) argument, passed
+  directly as props instead of wrapped again per-card. `updateReview`
+  itself is a `useCallback` using the functional `setState` form so it
+  never changes identity. `approvedCount`/`actionableCount`/
+  `acceptAllCount` moved into `useMemo`. Net effect: editing/accepting/
+  regenerating one field's card no longer causes every other unrelated
+  card to re-render.
+  Toolbar: progress text + "Start over" row and the Accept-high/mid +
+  Fill-approved row both already used `flex-wrap`; added `min-w-0` to the
+  progress text span and `shrink-0` to "Start over" so long counts don't
+  push the button off, and gave both action buttons `min-w-[9rem] flex-1`
+  so they wrap onto their own line as a pair below ~288px of available
+  width instead of compressing unreadably. Button copy shortened
+  ("Accept all high/mid" → "Accept high/mid", "Fill approved fields" →
+  "Fill approved") to reduce the width each button needs before wrapping.
+
+**Verified against:**
+`cd extension && npm run build` — clean build (39 modules). Specifically
+checked the compiled CSS for two easy-to-get-wrong points rather than
+trusting the class names alone: grepped for `line-clamp-4` (present,
+confirms no plugin was needed) and for the literal `380px` media rule from
+the `min-[380px]:grid-cols-2` arbitrary variant (present:
+`@media (min-width:380px){.min-\[380px\]\:grid-cols-2{...}}`). **Not
+verified**: no browser/DevTools resize test was run at 320px/400px/440px/
+500px on a real loaded extension — this is a static/build-level check only,
+consistent with this project's "write first, founder runs it" workflow.
+
+**Acceptance criterion met?** Partial — build-verified and CSS-output-
+verified for the specific risky utilities used, but the actual visual
+claim ("no horizontal overflow, buttons wrap correctly, cards behave from
+320-500px") is unverified in a real browser.
+
+**Deviations from spec:**
+- Item 9 (performance) asked for "virtualization for long forms" in
+  addition to memoization. Deliberately not implemented: this is a
+  personal-scale tool (PRD target 10-50 users, form schemas are
+  application-form question counts, not thousands of rows), and
+  virtualization would mean adding a new dependency (e.g. `react-window`)
+  with no real list-length problem to solve — directly against
+  `AGENTS.md`'s "don't add abstraction for a hypothetical future
+  requirement" and "don't add a dependency ... without asking first."
+  Implemented the memoization half (`React.memo` + stable callbacks +
+  `useMemo`'d derived counts) since that's real, dependency-free, and
+  addresses actual re-render waste already present in the code.
+- The "more actions" collapse is unconditional (always behind a toggle),
+  not conditionally rendered only "if width becomes constrained" as
+  literally written in item 3 — see the reasoning inline above. If the
+  founder wants Regenerate visible-by-default on wider widths specifically,
+  that's a follow-up (would need a container query or `ResizeObserver`,
+  since Tailwind's `sm:`/`min-[…]:` variants key off the *document*
+  viewport, which happens to equal the side panel's own width here, but
+  using it for "is this specific card cramped" would be coupling the whole
+  panel's width to one component's disclosure state).
+
+**Known issues / follow-ups:**
+1. Owed: real Chrome side-panel resize test (drag/resize if the browser
+   allows it, or test on both a narrow and wide monitor) to confirm no
+   overflow at the 320-500px extremes and that the collapsed "more
+   actions" disclosure doesn't feel like an extra click users resent at
+   comfortable widths.
+2. If Chrome's side panel is ever *not* user-resizable in the installed
+   Chrome version (panel width may be fixed by the browser rather than the
+   page), the `min-width`/`max-width` CSS on `body` is inert either way —
+   worth confirming what the real constraint is on the founder's Chrome
+   build.
+
+---
+
+### Welcome hero section above the Extract button — 2026-07-13
+
+**What was built:**
+Founder asked for a single, tightly-scoped addition: a 5-element welcome
+hero (image, title, subtitle, description, "funny helper text") above the
+existing "Extract form from this page" button, with an explicit list of
+things *not* to touch (layouts, existing components, extraction logic,
+colors, button styling, settings/review screens, responsiveness,
+unrelated spacing). Implemented as a single new `WelcomeHero()` component
+added to `ReviewFlow.jsx` (next to the existing `StatusLine()` helper),
+rendered only when `phase === 'idle'` — deliberately excluded from the
+`phase === 'error'` case (which reuses the same button element with "Try
+again" copy) so a failed extraction doesn't re-show the first-run welcome
+copy; nothing else in the idle/error button block was touched.
+- `vite.config.js`: added `icons/HeroExtentionImg.png` (a 1024x1024 RGBA
+  source, provided by the founder) to the existing
+  `vite-plugin-static-copy` targets list (same `dest: 'icons'` pattern as
+  the four app-icon sizes) — required for the image to exist in `dist/` at
+  all; no other build config touched.
+- `WelcomeHero()` renders the image at `h-20 w-20` plus the four exact
+  copy strings the founder supplied verbatim (title "Hey, I'm Impleo 🦎",
+  subtitle "Your tiny AI assistant for boring forms.", description, and
+  the funny helper line), styled with `text-title`/`text-card`/
+  `text-body`/`text-caption` and `text-ink-primary`/`text-ink-secondary`/
+  `text-ink-muted` — all pre-existing design tokens from the brand-guide
+  pass, no new colors introduced. Wrapped in the same
+  `rounded-card border border-surface-border bg-surface-card p-4
+  shadow-soft-sm` pattern already used elsewhere (Onboarding's `Section`,
+  toolbar card in `ReviewFlow`) rather than inventing a new container
+  style.
+
+**Verified against:**
+`cd extension && npm run build` — clean build, confirmed
+`dist/icons/HeroExtentionImg.png` is present (7 static-copy items now,
+up from 6). **Not verified**: no browser load — visual placement/spacing
+above the Extract button, and whether the hero image reads well at
+`h-20 w-20` inside a 320-500px panel, are unconfirmed.
+
+**Acceptance criterion met?** Partial — build-verified only, same pattern
+as recent entries in this log.
+
+**Deviations from spec:**
+None — scope was followed exactly: one new component, one new
+static-copy target line, no other file touched. Confirmed by re-reading
+the diff before logging this entry that `App.jsx`, `Onboarding.jsx`,
+`components/ReviewCard.jsx`, `index.css`, and `tailwind.config.js` were
+untouched by this change.
+
+**Known issues / follow-ups:**
+1. Owed: load the unpacked extension and confirm the hero reads well
+   visually (image size, text hierarchy, spacing against the button right
+   below it) at both ends of the 320-500px range.
+
+---
+
+### Repo-wide "Christopher" → "Impleo" branding rename — 2026-07-13
+
+**What was built:**
+Founder asked for every remaining occurrence of Christopher/christopher/
+CHRISTOPHER outside `node_modules`/`dist` to be renamed, covering source,
+docs, config, and internal branding strings. `manifest.json` and the side
+panel title/favicon were already "Impleo" from the earlier rebrand pass
+(see that entry above), so this was a sweep for what that pass didn't
+touch. 29 replacements across 10 files:
+- `extension/package.json`, `server/package.json`: `name` field
+  (`christopher-extension` → `impleo-extension`,
+  `christopher-server` → `impleo-server`).
+- `extension/package-lock.json`, `server/package-lock.json`: the same two
+  `name` fields each (root + `packages[""].name`) hand-edited to match —
+  not regenerated via `npm install`, since only the literal name string
+  needed to change and the dependency-tree integrity hashes are untouched
+  by this.
+- `docs/AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/PRD.md`: title-line
+  renames (`# ... — Christopher` → `# ... — Impleo`) — these are
+  maintained, current-state docs (already edited in place for both prior
+  architecture pivots), not historical logs, so renaming them matches how
+  they've already been treated.
+- `docs/PROMPTS.md`: one occurrence inside an example agent prompt's quoted
+  text ("Christopher background loaded" → "Impleo background loaded").
+- `server/src/index.js`: startup console log string.
+- `extension/content-scripts/{generic-extractor,google-forms,luma}.js`:
+  the internal DOM marker attribute (`data-christopher-id` →
+  `data-impleo-id`) and the generated id prefixes (`christopher-N` /
+  `christopher-gf-N` / `christopher-luma-N` → `impleo-` equivalents).
+  Confirmed safe before renaming: each extractor sets this attribute *and*
+  builds the `selector` string from it within the same self-contained
+  function; `generic-filler.js`/the Google/Luma fillers never hardcode the
+  attribute name themselves, they only consume whatever `selector` string
+  the extractor already produced. So this is a same-file, same-function
+  literal rename with no cross-file coupling to get wrong — not a logic
+  change, no behavior difference.
+
+**Verified against:**
+`cd extension && npm run build` — clean build, and the build log's own
+package name line now reads `impleo-extension@0.1.0`, confirming the
+`package.json` rename took. Final repo-wide grep after all edits: 9
+occurrences remain, both deliberately skipped (see below) — no
+accidental misses.
+
+**Acceptance criterion met?** Yes for everything renamed (build-verified,
+functionally inert renames only). The two skipped categories below are
+intentional, not gaps.
+
+**Deviations from spec:**
+None — every replaced occurrence is a pure string/identifier rename with
+no logic, layout, or behavior change, per the "pure branding cleanup"
+instruction.
+
+**Known issues / follow-ups:**
+None beyond what's already logged for the extension load/visual
+verification in earlier entries.
+
+---
+
+**Replacements performed: 29**, across `extension/package.json`,
+`server/package.json`, `extension/package-lock.json` (×2),
+`server/package-lock.json` (×2), `docs/AGENTS.md`, `docs/ARCHITECTURE.md`,
+`docs/PRD.md`, `docs/PROMPTS.md`, `server/src/index.js`,
+`extension/content-scripts/generic-extractor.js` (×4),
+`extension/content-scripts/google-forms.js` (×8),
+`extension/content-scripts/luma.js` (×6).
+
+**Remaining occurrences: 9** — both deliberately not renamed:
+1. `server/src/db.js:10` — `join(dataDir, 'christopher.db')`, the actual
+   SQLite filename the server reads/writes. A real, non-empty
+   `server/data/christopher.db` (plus active `-wal`/`-shm` sidecar files,
+   ~1.2MB of WAL data) already exists on disk with the founder's real
+   profile/settings/qa-history. Renaming the code constant without also
+   renaming the physical file would make the server start pointing at a
+   fresh, empty `impleo.db` on next run and silently orphan that existing
+   data — this fails "keep functionality unchanged," and a filesystem
+   rename of a SQLite db with live WAL/SHM files (especially if the
+   `node --watch` dev server happens to be running and holding a lock,
+   which on Windows can outright fail the rename) is a stateful,
+   hard-to-reverse operation this task's "pure branding cleanup" framing
+   didn't ask for. Left as-is; renaming it is a separate, explicit ask if
+   wanted, ideally with the server stopped and both the code and the
+   on-disk file renamed together in the same step.
+2. `docs/OUTCOME.md` — 8 occurrences, all inside past log entries dated
+   2026-07-12/13 (describing e.g. `christopher.db` schema checks, and the
+   original manifest rename from "Christopher" to "Impleo" as a
+   historical fact). `OUTCOME.md`'s own header states "Never edit or
+   delete a past entry to make it look cleaner — if something had to be
+   redone, add a new entry noting the correction, don't rewrite history."
+   Renaming these would both violate that stated policy and make several
+   entries factually wrong (e.g. one line literally documents the
+   manifest's `"Christopher"` → `"Impleo"` transition — replacing
+   "Christopher" there would read as `"Impleo"` → `"Impleo"`, erasing the
+   record of what changed). This entry is itself the correct way to
+   record the rename per that same policy, not an edit to the old ones.
+   The `server/src/db.js` occurrence noted above is resolved in the
+   follow-up entry immediately below.
+
+---
+
+### `christopher.db` → `impleo.db` — 2026-07-13
+
+**What was built:**
+Follow-up to the branding-rename entry above, closing its one remaining
+code-side skip. The founder asked to rename the db file and update
+`db.js` together rather than leave the filename mismatched with the rest
+of the rebrand.
+- Found 5 stale `node` processes still holding the db file open from
+  earlier sessions (`node --watch src/index.js` × 3, plus one watched
+  child `node src/index.js`, plus one detached `node src/index.js`) —
+  confirmed via `Get-CimInstance Win32_Process` parent/child mapping that
+  these were 3 distinct leftover dev-server instances (not 5; one PID was
+  the watch-child of another), never cleanly stopped across sessions.
+  Stopped only those 4 node.exe processes (`Stop-Process -Force`) —
+  left the extension's `vite build --watch` process and its own `npm run
+  dev` wrapper alone, since neither touches the db file.
+- Checkpointed `server/data/christopher.db` (`-wal`/`-shm` in journal_mode
+  WAL, the `-wal` file had grown to ~1.2MB of not-yet-checkpointed writes)
+  into the main file (`PRAGMA wal_checkpoint(TRUNCATE)` via Python's stdlib
+  `sqlite3`, no new dependency) rather than renaming all three WAL-mode
+  files together — collapses to one clean file to rename instead of three
+  files whose consistency depends on staying together, main file grew
+  4KB → 40KB confirming real data (56+ qa_history entries, profile,
+  settings across past sessions) had been sitting in the WAL uncommitted
+  to the main file this whole time.
+- `mv christopher.db impleo.db`, then `PRAGMA integrity_check` (`ok`) and
+  confirmed all 4 tables (`settings`, `profile`, `qa_history`,
+  `sqlite_sequence`) present before touching any code.
+- `server/src/db.js`: `join(dataDir, 'christopher.db')` →
+  `join(dataDir, 'impleo.db')`.
+
+**Verified against:**
+Ran the real server for real (`node src/index.js`, briefly, then let it
+exit) against the renamed file and hit it over HTTP: `GET /api/profile`
+returned the founder's actual saved profile (name "Agnik Paul", full
+resume text, projects, etc. — not a stub), `GET /api/settings` returned
+the real saved provider config (`provider: "groq"`, `hasKey: true` for
+Groq, matching the "Groq/xAI mixup" fix logged earlier in this file) —
+confirms the rename didn't silently start a fresh empty database. `ls`
+after the run showed new `impleo.db-shm`/`impleo.db-wal` sidecars
+(expected, normal WAL-mode behavior) and no stray `christopher.db` was
+recreated. Confirmed via `Get-CimInstance` that no server process was
+left running after the test (the founder needs to `cd server && npm run
+dev` themselves to bring it back up). Final repo-wide grep: 0 remaining
+"christopher" occurrences outside `docs/OUTCOME.md`'s historical entries
+(intentionally preserved, per the entry above).
+
+**Acceptance criterion met?** Yes — real data round-tripped through the
+renamed file over a real HTTP call, not just a file-existence check.
+
+**Deviations from spec:**
+None. The founder explicitly authorized stopping the processes holding
+the file open (asked via a clarifying question first, since killing
+running processes is outside "pure branding cleanup" and this session
+found more stale server instances than expected).
+
+**Known issues / follow-ups:**
+1. The old `christopher.db` filename no longer exists anywhere in
+   `server/data/` — nothing reads it anymore, no compatibility shim was
+   added (per `AGENTS.md`'s "don't add backwards-compatibility hacks"),
+   consistent with this being a rename of an already-migrated-in-place
+   file, not a case where two versions of the app might coexist.
+2. Three separate stale dev-server processes had been running
+   concurrently against the same WAL-mode db across past sessions before
+   this cleanup — harmless for SQLite (WAL supports concurrent readers/one
+   writer across processes) but worth remembering to stop the server
+   between sessions rather than leaving multiple `npm run dev` terminals
+   open indefinitely.
+
+---
+
+## 2026-07-13 — Landing page design blueprint (docs/LANDING_PAGE.md)
+
+**Task:** Create a landing page markdown file with a "classic modern"
+design that explains what Impleo is, with colors following the Impleo
+Design System, using design skills.
+
+**What was built:** A new build-ready landing page specification at
+`docs/LANDING_PAGE.md`. Ran the `frontend-design` skill; per its Step 0,
+recognized the Impleo Design System v2 (`docs/Impleo_Brand_Guide.md`)
+already exists and *extended* it rather than inventing a competing system.
+Every token in the doc traces back to the brand guide's exact hex values,
+Geist typography, 12px/10px radii, 150–250ms motion cap, and the
+MongoDB Atlas × Linear × Arc × Raycast personality.
+
+**Contents:** Product context; chosen visual style (premium
+developer-tool, dark-first) with rationale; full design-token block
+(color/type/spacing/radius/motion); 11-section page structure
+(nav → hero → social proof → problem → 5-step "chameleon flow" → 6 feature
+cards → review-first trust band on Deep Jungle Green → multi-provider →
+privacy/local-first → FAQ → final CTA → footer), each with layout, copy,
+and color usage; component rules; interaction/motion; WCAG accessibility
+notes (incl. the green/lime/yellow-can't-be-small-body-text caveat);
+responsive strategy (mobile-first, 1120px container, ultra-wide cap);
+a paste-ready copy bank; and 5 open questions.
+
+**Deliverable type:** documentation/design spec only — no product code,
+no build step touched. Framework-agnostic; tokens map cleanly onto a
+Tailwind theme extension if the page is later built on the extension's
+existing Vite/React/Tailwind stack.
+
+**Acceptance criterion met?** Partial by nature — this is a spec, not a
+running page, so there is nothing to exercise against a real URL yet.
+Verified only that it is internally consistent with the brand guide and
+PRD (correct hex values, correct provider list Anthropic/Gemini/OpenAI/
+Groq, correct hard rules: review-before-fill and never-auto-submit are
+both surfaced as selling points).
+
+**Deviations / notes:** Introduced one "chameleon-shift" gradient
+(green → lime → yellow) as the single allowed hero/CTA accent — a
+deliberate, brand-derived alternative to the generic purple→blue AI
+gradient the design skill flags as an anti-pattern. Not in the original
+brand guide but built entirely from its existing colors.
+
+**Open follow-ups (see doc §11):** Is Impleo live on the Chrome Web Store
+(affects the "Add to Chrome" CTA)? Is the GitHub repo public? Do we have
+a real side-panel screenshot/demo GIF or use styled mock ReviewCards?
+Which framework + host for the actual page?
+
+---
+
+## 2026-07-13 — Landing page built in React/Tailwind (landing/)
+
+**Task:** Implement the landing page spec (docs/LANDING_PAGE.md) as a real
+React + Tailwind app, matching the extension's existing stack.
+
+**What was built:** A new standalone `landing/` Vite + React + Tailwind app
+(separate from `extension/` and `server/` — it's a static marketing site,
+deployable to GitHub Pages/Vercel, not part of the MV3 extension or the
+local server). Design tokens are *mirrored* from
+`extension/tailwind.config.js` (same brand/jungle/lime/signature/surface/ink
+color names, same 12px/10px radii, Geist font) so the site and product share
+one visual language.
+
+**Files:** landing/{package.json, vite.config.js, postcss.config.js,
+tailwind.config.js, index.html, .gitignore, README.md} +
+src/{main.jsx, App.jsx, ui.jsx, ReviewCardMock.jsx, index.css}. Chameleon
+mascot + hero image copied into landing/public/ from extension/icons/.
+
+**Sections implemented (all 11 from the spec):** sticky blurred nav w/ mobile
+sheet → asymmetric hero (chameleon-shift gradient headline, live ReviewCard
+mock w/ auto-Accept tick) → "works on" strip → problem (45:00→0:30) →
+5-step how-it-works w/ gradient connector → 6 feature cards → Deep-Jungle-Green
+review/trust band → multi-provider tiles (Anthropic active ring) → local-first
+privacy diagram → accordion FAQ → final CTA → footer. Line-icon SVGs only (no
+emoji), IntersectionObserver scroll-reveal, prefers-reduced-motion honored,
+lime focus rings, aria-expanded on nav/FAQ/accordion.
+
+**Product-rule fidelity:** "Never auto-submits" surfaced in features, trust
+band, FAQ, and footer; review-before-fill is the narrative spine; provider
+list matches AGENTS.md (Anthropic/Gemini/OpenAI/Groq); "your key, never ours /
+local server" privacy story matches the local-first architecture.
+
+**Verification status:** NOT yet built/run — per the founder's standing
+preference, code was written and handed off for the founder to
+`cd landing && npm install && npm run dev`. No npm install/build was run in
+this session. Static review only: imports/exports line up (ui.jsx exports
+match App.jsx imports; ReviewCardMock props used correctly), all Tailwind
+classes reference tokens defined in landing/tailwind.config.js.
+
+**Known follow-ups (doc §11 / README):** CHROME_STORE_URL and GITHUB_URL are
+`#` placeholders — replace with the real Chrome Web Store listing and repo.
+Hero/trust use styled mock ReviewCards; swap for a real side-panel screenshot
+if preferred. Host + deploy target still undecided.
+
+---
+
+## 2026-07-13 — Profile Import/Export
+
+**Task:** Implement Import Profile / Export Profile per the approved plan
+(`C:\Users\ASUS\.claude\plans\we-need-to-plan-glistening-sparrow.md`),
+following a planning session that evaluated JSON vs YAML vs Markdown vs a
+Markdown+frontmatter hybrid as the exchange format.
+
+**Format chosen:** a small versioned JSON envelope
+(`{ schemaVersion, exportedAt, app: 'impleo', profile, qaHistory }`), decided
+over YAML/Markdown because the profile is already JSON at rest and in
+transit, JSON needs no new dependency for validation/versioning (hand-written
+validators suffice given the shallow, known shape), and it's the most
+AI-friendly format for a future "Extract From Resume" feature (explicitly
+out of scope this session).
+
+**Scope decisions (confirmed with founder during planning):** export/import
+includes both `profile` and `qaHistory` (not profile-only); import is
+confirm-then-overwrite (dry-run validate → inline confirm banner → commit),
+not a silent overwrite or a per-field merge UI.
+
+**What was built:**
+- `server/src/profileSchema.js` (new) — `CURRENT_SCHEMA_VERSION` (=1),
+  `validateEnvelope`, `validateProfile`, `validateQaHistoryEntries`. Strict
+  on structure (wrong-typed fields reject, no delimiter-guessing), lenient
+  on missing values (sensible per-field defaults). qaHistory entries are
+  dropped individually on failure rather than failing the whole import
+  (regenerable cache data); profile is never partially accepted.
+- `server/src/routes/import-export.js` (new) — `GET /export`,
+  `POST /import` (supports a `dryRun` flag for the pre-confirm validation
+  pass). Import commits both the `profile` upsert and a full `qa_history`
+  replace inside one `db.transaction()`; qaHistory rows are re-inserted in
+  reverse order so fresh autoincrement ids preserve chronological order
+  against the existing `ORDER BY id DESC` read. File carries a guardrail
+  comment: it must never read/write the `settings` table, and structurally
+  doesn't (only imports `Router`, `db`, and the schema validators).
+- `server/src/routes/qa-history.js` — `MAX_ENTRIES` changed from a local
+  const to an exported const, now the single source of truth shared with
+  `profileSchema.js`.
+- `server/src/index.js` — mounted the new router flat at `/api` (not nested
+  under `/api/profile`, to avoid relying on Express router-fallthrough
+  ordering against the existing `profileRouter` mount).
+- `extension/src/sidepanel/lib/api.js` — added `exportProfile`/
+  `importProfile`, both reusing the existing shared `request()` wrapper.
+- `extension/src/sidepanel/components/Onboarding.jsx` — new "Backup"
+  section (first section in the form, above "AI provider") with Export/
+  Import buttons, a hidden file input, a dry-run confirm banner naming both
+  the current and incoming profile plus the incoming Q&A count, and a
+  shared `busy` flag now gating all three buttons (Save/Export/Import) to
+  prevent races. Import/export deliberately bypass the existing
+  `profileToFormState`/`formStateToProfile` textarea-serialization
+  functions for the actual data transfer — those are lossy/delimiter-based
+  (comma/pipe/newline) and would silently corrupt e.g. a project
+  description containing `|`. Export always reads the server's saved
+  profile fresh via `api.exportProfile()`, never the in-progress form
+  state, so unsaved edits can't be silently exported.
+
+**Verification status:** NOT run this session — per standing preference,
+code was written and handed off for the founder to test manually (server
+`npm run dev`, extension `npm run dev` + load unpacked). The plan file's
+Verification section lists the exact manual test sequence, including a
+project description containing a literal `|` to confirm the round-trip
+avoids the lossy form-serialization path, and negative tests (invalid JSON,
+unrelated JSON file, hand-edited wrong-typed field, hand-edited future
+`schemaVersion`), plus a DevTools Network-tab check that no import/export
+request ever touches `/api/settings`.
+
+**Deviations from the plan:** none of substance. One small addition beyond
+the plan's literal wording: `validateEnvelope` also rejects
+`schemaVersion < CURRENT_SCHEMA_VERSION` (not just `>`) with an "unsupported
+older version" message — harmless/unreachable today since v1 is the only
+version that has ever existed, but makes the eventual v2 migration seam
+(noted via comment in `profileSchema.js`) unambiguous rather than silently
+falling through.
+
+**Known follow-ups:** none identified beyond what's already in the plan's
+own scope notes (migrations map deferred until a real v2 exists; Extract
+From Resume is separate future work).
+
+---
+
+## 2026-07-13 — Import Profile UX redesign (drag-drop modal + AI prompt)
+
+**Task:** Replace the raw "click Import → file picker" flow with a modal that
+teaches a non-technical user how to get a profile JSON in the first place:
+drag-drop upload, an instructions section, and a copyable prompt for pasting
+into an external AI assistant (ChatGPT/Claude/Gemini/Grok/etc.) alongside a
+resume.
+
+**Key design decision (confirmed with founder):** the import validator
+(`server/src/profileSchema.js`) now accepts a **bare profile object** (no
+`schemaVersion`/`app` envelope wrapper) in addition to the strict envelope
+format from last session, auto-wrapping it with the current schema version
+before validating. Detection: no top-level `profile` key, but at least one
+recognized profile field (`personal`, `links`, `education`, `skills`, etc.)
+present at the top level. This is a deliberate, narrow exception to last
+session's "missing schemaVersion is rejected, same bucket as not an Impleo
+export" rule — justified because the JSON is now often produced by a
+general-purpose AI assistant that won't always follow a wrapper instruction
+exactly, and the target user has no way to hand-fix that. The strict
+envelope path is unchanged for machine-exported files (Export still always
+emits the full envelope).
+
+**What was built:**
+- `server/src/profileSchema.js` — added `PROFILE_FIELD_KEYS` +
+  `looksLikeBareProfile()`; `validateEnvelope` now branches: bare profile →
+  validate directly and synthesize the envelope; anything with a `profile`
+  key (or nothing recognizable) → the original strict envelope checks,
+  unchanged.
+- `extension/src/sidepanel/components/ImportProfileModal.jsx` (new) — a
+  full-panel overlay (`fixed inset-0 z-50`, since the side panel itself is
+  only ~500px wide, a true centered dialog didn't make sense) with three
+  sections: (1) a drag-and-drop upload area with a click-to-browse
+  fallback, reusing the exact same `api.importProfile(..., {dryRun})` →
+  confirm → commit flow as before, just relocated into the modal; (2) a
+  numbered instruction list explaining the resume → external AI → JSON →
+  drag-drop flow, with a note that Impleo intentionally doesn't generate
+  the JSON itself (provider-agnostic, no API cost, works with any model);
+  (3) a read-only, monospace textarea containing a detailed prompt (field
+  guide + five hard rules: never hallucinate experience, never invent
+  achievements/metrics, leave ungiven fields empty rather than guessing,
+  conservative inference only, valid-JSON-only output) with a "Copy
+  prompt" button that shows "Copied ✓" for 2s via
+  `navigator.clipboard.writeText`.
+- `extension/src/sidepanel/components/Onboarding.jsx` — Export is
+  unchanged (single click, no confirmation, non-destructive). Import's old
+  inline hidden-file-input/dry-run/confirm-banner state and handlers were
+  removed entirely and replaced with a single `importModalOpen` boolean
+  that renders `<ImportProfileModal>`; the modal owns all of its own
+  upload/validate/confirm state and calls `onImported` (`= onSaved`) on
+  success, so `App.jsx` still needs zero changes.
+
+**Verification status:** NOT run this session — handed off per standing
+preference. To test: open the side panel, click "Import profile" in the
+Backup section, confirm the modal opens full-panel; try dragging a
+previously-exported `.json` file onto the drop zone and via click-to-browse;
+click "Copy prompt" and confirm the clipboard content and the "Copied ✓"
+feedback; paste the prompt into an actual AI assistant with a real resume,
+download its output, and drag that in to confirm the bare-profile
+auto-wrap path actually works end-to-end (not just the enveloped-file path,
+which was already tested last session).
+
+**Known follow-ups:** none identified. The prompt content should be
+spot-checked against at least one real AI assistant's output before relying
+on it as the primary onboarding path, since prompt-following quality varies
+by model/provider.

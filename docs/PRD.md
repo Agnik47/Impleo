@@ -1,4 +1,4 @@
-# PRD — Christopher (Application Copilot Chrome Extension)
+# PRD — Impleo (Application Copilot Chrome Extension)
 
 ## 1. Problem
 

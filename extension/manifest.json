@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Christopher",
+  "name": "Impleo",
   "version": "0.1.0",
-  "description": "Application copilot: extracts form questions, generates personalized answers with Claude, fills only what you approve.",
+  "description": "Application copilot: extracts form questions, generates personalized answers with AI, fills only what you approve.",
   "permissions": ["activeTab", "scripting", "sidePanel"],
   "host_permissions": ["<all_urls>"],
   "background": {
@@ -12,5 +12,19 @@
   "side_panel": {
     "default_path": "index.html"
   },
-  "action": {}
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    },
+    "default_title": "Impleo"
+  }
 }

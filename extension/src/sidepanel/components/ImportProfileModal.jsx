@@ -1,0 +1,279 @@
+import { useRef, useState } from 'react';
+import { api } from '../lib/api.js';
+
+// This prompt is Impleo's onboarding engine for anyone who doesn't want to hand-fill
+// the form: it's pasted into an external AI assistant (ChatGPT/Claude/Gemini/Grok/etc.)
+// alongside a resume, and the assistant's output is dragged straight back into this
+// modal. Impleo never calls a model to generate this itself — see the instructions
+// section below for why. Keep this in sync with profileSchema.js's field list if the
+// profile shape ever changes.
+const IMPORT_PROMPT = `You are generating a structured JSON profile for Impleo, a personal application-assistant tool. I will give you my resume and/or other background information. Produce ONE JSON object that Impleo can import directly — nothing else. No markdown code fences, no commentary before or after, no explanation. Just the JSON.
+
+OUTPUT FORMAT — match this shape exactly, filling in real values:
+
+{
+  "schemaVersion": 1,
+  "app": "impleo",
+  "profile": {
+    "personal": { "name": "", "email": "", "phone": "", "location": "" },
+    "links": { "linkedin": "", "github": "", "portfolio": "" },
+    "education": "",
+    "skills": [],
+    "interests": [],
+    "goals": "",
+    "projects": [
+      { "name": "", "description": "", "techStack": "", "impact": "" }
+    ],
+    "achievements": [],
+    "resumeText": "",
+    "writingSampleText": ""
+  },
+  "qaHistory": []
+}
+
+FIELD GUIDE
+- personal.name/email/phone/location: exactly as they appear in what I gave you. Leave "" if a field isn't provided — never invent contact info.
+- links: LinkedIn, GitHub, and portfolio URLs if given; otherwise "".
+- education: one line per degree/program (e.g. "BS Computer Science, XYZ University, 2024"); join multiple with \\n inside the string.
+- skills / interests: JSON arrays of short strings. Only include skills that are actually stated or clearly demonstrated by real project/work history — don't pad the list with generic buzzwords.
+- goals: 2-4 sentences, first person, about what I'm looking for. Base this only on what I told you; if I didn't say, leave it "" rather than guessing.
+- projects: one object per real project. techStack is a short string (e.g. "React, Node.js, PostgreSQL"). impact is a concrete outcome or metric if one was stated (e.g. "reduced page load time by 40%"); otherwise a one-line description of what it does — never invent a number that wasn't given.
+- achievements: array of short strings — awards, publications, competition results, notable metrics — only ones explicitly present in what I gave you.
+- resumeText: the full plain-text content of my resume, cleaned up (no repeated page headers/footers/page numbers). This is the most important field — don't summarize or shorten it.
+- writingSampleText: a past essay or application answer, verbatim, if I gave you one. Otherwise "".
+- qaHistory: always an empty array — there's no prior application history to seed yet.
+
+HARD RULES
+1. Never hallucinate work experience, job titles, employers, or dates that weren't in what I gave you.
+2. Never invent achievements, metrics, awards, or outcomes. If a project's impact isn't stated, describe what it does instead of inventing a number.
+3. If a field genuinely has no source information, leave it "" (or [] for arrays) — don't fabricate a plausible-sounding placeholder.
+4. Conservative inference is fine (e.g. inferring "distributed systems" as a skill from a project description that clearly involves it); inference that isn't a fair reading of what's actually there is not.
+5. Output must be valid JSON and nothing else.
+
+Here is my background information:
+[paste your resume and any other context below this line]`;
+
+function UploadIcon({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 16V4M12 4l-4 4M12 4l4 4" />
+      <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+    </svg>
+  );
+}
+
+function CloseIcon({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+
+const secondaryBtn =
+  'rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50';
+const primaryBtn =
+  'rounded-btn bg-brand px-3 py-1 text-body font-medium text-jungle transition-colors duration-150 hover:bg-brand-hover disabled:opacity-50';
+const errorBanner =
+  'min-w-0 break-words rounded-card border border-red-900/50 bg-red-950/30 p-2.5 text-body text-red-300';
+
+export default function ImportProfileModal({ open, onClose, currentProfile, onImported }) {
+  const fileInputRef = useRef(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [pending, setPending] = useState(null); // { envelope, summary } once dry-run validates
+  const [copied, setCopied] = useState(false);
+
+  if (!open) return null;
+
+  function reset() {
+    setError(null);
+    setPending(null);
+    setDragActive(false);
+  }
+
+  function handleClose() {
+    reset();
+    onClose();
+  }
+
+  async function processFile(file) {
+    if (!file) return;
+    setError(null);
+    setPending(null);
+
+    let parsed;
+    try {
+      parsed = JSON.parse(await file.text());
+    } catch {
+      setError("That file isn't valid JSON.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const result = await api.importProfile(parsed, { dryRun: true });
+      setPending({ envelope: parsed, summary: result.summary });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    setDragActive(false);
+    processFile(e.dataTransfer.files?.[0]);
+  }
+
+  function handleBrowse(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file later
+    processFile(file);
+  }
+
+  async function handleConfirm() {
+    if (!pending) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.importProfile(pending.envelope);
+      onImported();
+      handleClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCopyPrompt() {
+    try {
+      await navigator.clipboard.writeText(IMPORT_PROMPT);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError('Could not copy automatically — select the text above and copy it manually.');
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-surface-bg"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Import profile"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') handleClose();
+      }}
+    >
+      <div className="flex shrink-0 items-center justify-between border-b border-surface-border bg-surface-sidebar px-3 py-3 sm:px-4">
+        <h2 className="text-title text-ink-primary">Import profile</h2>
+        <button
+          type="button"
+          onClick={handleClose}
+          aria-label="Close"
+          className="rounded-btn p-1.5 text-ink-secondary transition-colors duration-150 hover:bg-surface-card-hover hover:text-ink-primary"
+        >
+          <CloseIcon className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="flex-1 space-y-4 overflow-y-auto p-3 sm:p-4">
+        {/* Section 1 — upload area / confirm step */}
+        {pending ? (
+          <div className={`${errorBanner} space-y-2`}>
+            <p>
+              This will replace your current profile
+              {currentProfile?.personal?.name ? ` (currently: ${currentProfile.personal.name})` : ''}{' '}
+              with the imported one
+              {pending.summary?.name ? ` for ${pending.summary.name}` : ''}, and replace your
+              saved Q&A history with {pending.summary?.qaHistoryCount ?? 0} imported entries.
+              This can't be undone.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setPending(null)} disabled={busy} className={secondaryBtn}>
+                Cancel
+              </button>
+              <button type="button" onClick={handleConfirm} disabled={busy} className={primaryBtn}>
+                {busy ? 'Importing…' : 'Replace profile'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragActive(true);
+            }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click();
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label="Upload profile JSON file"
+            className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-card border-2 border-dashed p-8 text-center transition-colors duration-150 ${
+              dragActive ? 'border-brand bg-brand/5' : 'border-surface-border bg-surface-card hover:bg-surface-card-hover'
+            }`}
+          >
+            <UploadIcon className="h-8 w-8 text-ink-secondary" />
+            <p className="text-card text-ink-primary">
+              {busy ? 'Reading file…' : 'Drag & drop your profile JSON here'}
+            </p>
+            <p className="text-caption text-ink-muted">or click to browse — .json files only</p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={handleBrowse}
+            />
+          </div>
+        )}
+
+        {error && <div className={errorBanner}>{error}</div>}
+
+        {/* Section 2 — instructions */}
+        <div className="space-y-2 rounded-card border border-surface-border bg-surface-card p-3 shadow-soft-sm">
+          <h3 className="text-card text-ink-primary">Don't have a profile JSON yet?</h3>
+          <ol className="list-decimal space-y-1 pl-4 text-body text-ink-secondary">
+            <li>Open ChatGPT, Claude, Gemini, Grok, or any AI assistant.</li>
+            <li>Upload your resume and any other info you want Impleo to know.</li>
+            <li>Copy the prompt below.</li>
+            <li>Ask the AI to generate an Impleo profile JSON.</li>
+            <li>Download or save the generated JSON.</li>
+            <li>Drag and drop it into the box above.</li>
+          </ol>
+          <p className="text-caption text-ink-muted">
+            Impleo doesn't generate this file itself — your AI assistant does, from the prompt
+            below. Impleo only imports and validates the result. That keeps Impleo
+            provider-agnostic, avoids API costs, and works with any AI model you already have
+            access to.
+          </p>
+        </div>
+
+        {/* Section 3 — copy prompt */}
+        <div className="space-y-2 rounded-card border border-surface-border bg-surface-card p-3 shadow-soft-sm">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-card text-ink-primary">Prompt for your AI assistant</h3>
+            <button type="button" onClick={handleCopyPrompt} className={`shrink-0 ${secondaryBtn}`}>
+              {copied ? 'Copied ✓' : 'Copy prompt'}
+            </button>
+          </div>
+          <textarea
+            readOnly
+            rows={10}
+            value={IMPORT_PROMPT}
+            onFocus={(e) => e.target.select()}
+            className="w-full resize-none rounded-input border border-surface-border bg-surface-bg px-2.5 py-1.5 font-mono text-caption text-ink-secondary focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}

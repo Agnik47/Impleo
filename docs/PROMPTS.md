@@ -16,7 +16,7 @@ OUTCOME.md" wrapper — you don't need to add it yourself.
 > activeTab, scripting, sidePanel; host_permissions: <all_urls>;
 > side_panel.default_path pointing to sidepanel/index.html;
 > background.service_worker as background.js with type "module"), an empty
-> background.js that just logs "Christopher background loaded," and a
+> background.js that just logs "Impleo background loaded," and a
 > minimal sidepanel/index.html with a placeholder heading. When done, append
 > an entry to docs/OUTCOME.md for task 1.1 per its template, including
 > confirmation that Load Unpacked in chrome://extensions produced zero

@@ -6,6 +6,7 @@ import settingsRouter from './routes/settings.js';
 import qaHistoryRouter from './routes/qa-history.js';
 import testKeyRouter from './routes/test-key.js';
 import generateRouter from './routes/generate.js';
+import importExportRouter from './routes/import-export.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -33,6 +34,7 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/qa-history', qaHistoryRouter);
 app.use('/api/test-key', testKeyRouter);
 app.use('/api', generateRouter);
+app.use('/api', importExportRouter);
 
 // Safety net: any route that throws (sync) or forwards via next(err) lands
 // here instead of Express's default HTML error page, which api.js's
@@ -50,5 +52,5 @@ app.get('/', (req,res)=> {
 // Loopback-only: an unbound listen() also accepts connections from other
 // devices on the same network, which chrome.storage.local never exposed.
 app.listen(PORT, '127.0.0.1', () => {
-  console.log(`Christopher server listening on http://localhost:${PORT}`);
+  console.log(`Impleo server listening on http://localhost:${PORT}`);
 });
