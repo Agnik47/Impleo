@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api } from '../lib/api.js';
 import ImportProfileModal from './ImportProfileModal.jsx';
+import IdentityMemoryManager from './IdentityMemoryManager.jsx';
 
 const emptyForm = {
   personal: { name: '', email: '', phone: '', location: '' },
@@ -240,8 +241,9 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
           </button>
         </div>
         <p className="text-caption text-ink-muted">
-          Exported files contain your profile in plain text, including personal info — handle
-          them like a resume.
+          Exported files contain your profile <span className="text-ink-secondary">and any
+          remembered identity values (which can include sensitive IDs like Aadhaar and date of
+          birth)</span> in plain text — handle them like a resume, or more carefully.
         </p>
 
         {exportError && (
@@ -249,6 +251,10 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
             {exportError}
           </div>
         )}
+
+        <div className="border-t border-surface-border pt-2">
+          <IdentityMemoryManager />
+        </div>
       </Section>
 
       <Section label="AI provider" hint="Pick which provider to use — you only need a key for this one. Use whichever you have free-tier access to (e.g. a free Google Gemini key works if you don't want to pay for API usage).">

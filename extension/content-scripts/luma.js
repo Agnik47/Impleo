@@ -14,6 +14,19 @@ export function extractLumaForm() {
     return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
   }
 
+  // Matches text that is ONLY a required-field marker (an asterisk/bullet,
+  // maybe repeated, maybe with whitespace) — used to skip over a marker
+  // rendered as its own DOM node (a separate <span>*</span> sibling of the
+  // real label) instead of mistaking it for the label itself.
+  const MARKER_ONLY_RE = /^[\s*✱•·]+$/;
+  // Strips a trailing marker segment off an otherwise-real label so the
+  // required asterisk isn't shown twice when the UI also renders its own
+  // "*" for required fields.
+  const TRAILING_MARKER_RE = /[\s]*[*✱]+\s*$/;
+  function stripTrailingMarker(text) {
+    return String(text || '').replace(TRAILING_MARKER_RE, '').trim();
+  }
+
   function resolveLabel(el) {
     if (el.id) {
       const labelFor = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
@@ -28,11 +41,18 @@ export function extractLumaForm() {
       const referenced = document.getElementById(ariaLabelledby);
       if (referenced && textOf(referenced)) return textOf(referenced);
     }
+    // Bounded to a few hops: a required-marker span is usually 1 hop before
+    // the real label, but walking indefinitely risks grabbing unrelated text
+    // (e.g. the page's own event-title heading) when there's no close label —
+    // this previously mislabeled a field with distant page content.
     let node = el.previousElementSibling;
-    while (node) {
+    let hops = 0;
+    const MAX_SIBLING_HOPS = 4;
+    while (node && hops < MAX_SIBLING_HOPS) {
       const text = textOf(node);
-      if (text) return text;
+      if (text && !MARKER_ONLY_RE.test(text)) return text;
       node = node.previousElementSibling;
+      hops += 1;
     }
     return el.placeholder || el.name || '(unlabeled field)';
   }
@@ -62,10 +82,24 @@ export function extractLumaForm() {
       const group = nativeCandidates.filter((c) => c.name === el.name && (c.type || '').toLowerCase() === type);
       const options = group.map((c) => resolveLabel(c));
       const fieldType = type === 'radio' ? 'radio' : group.length > 1 ? 'checkbox' : 'checkbox_single';
+      // The first option's own label is a last-resort fallback, not the group's
+      // question -- prefer a real fieldset/legend, then the label of the group's
+      // nearest common-ancestor container (same lookup the custom ARIA groups
+      // below already use for their container), before falling back to it.
+      const fieldset = group[0].closest('fieldset');
+      const legend = fieldset && textOf(fieldset.querySelector('legend'));
+      let groupContainer = group[0].parentElement;
+      for (const c of group.slice(1)) {
+        while (groupContainer && !groupContainer.contains(c)) groupContainer = groupContainer.parentElement;
+      }
+      const groupLabel = groupContainer ? resolveLabel(groupContainer) : null;
+      const questionText = stripTrailingMarker(
+        legend || (groupLabel && groupLabel !== '(unlabeled field)' ? groupLabel : null) || options[0] || el.name
+      );
       const id = stampId(group);
       results.push({
         id,
-        questionText: options[0] || el.name,
+        questionText,
         fieldType,
         options,
         required: group.some((c) => c.required),
@@ -83,7 +117,7 @@ export function extractLumaForm() {
     const id = stampId([el]);
     results.push({
       id,
-      questionText: resolveLabel(el),
+      questionText: stripTrailingMarker(resolveLabel(el)),
       fieldType,
       options,
       required: Boolean(el.required),
@@ -106,7 +140,7 @@ export function extractLumaForm() {
     const id = stampId(elements);
     results.push({
       id,
-      questionText: resolveLabel(container),
+      questionText: stripTrailingMarker(resolveLabel(container)),
       fieldType,
       options,
       required: false,
@@ -123,7 +157,7 @@ export function extractLumaForm() {
     const id = stampId([combobox]);
     results.push({
       id,
-      questionText: resolveLabel(combobox),
+      questionText: stripTrailingMarker(resolveLabel(combobox)),
       fieldType: 'dropdown',
       options,
       required: false,
@@ -169,11 +203,94 @@ export function fillLumaForm(approvedAnswers) {
     return match || null;
   }
 
+  // Luma is React-driven and can re-render a question's DOM subtree between
+  // extraction and Fill (e.g. on a validation-state change), which wipes the
+  // data-impleo-id stamped at extraction time even though the field is still
+  // on the page. When the stamped selector no longer matches, re-locate the
+  // field by re-deriving its visible label the same way extraction does and
+  // matching it against the question text carried alongside the answer.
+  function findElementsByQuestionText(questionText, fieldType) {
+    const target = String(questionText || '').trim().toLowerCase();
+    if (!target) return [];
+
+    function labelFor(el) {
+      if (!el) return '';
+      if (el.id) {
+        const labelForAttr = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+        if (labelForAttr && textOf(labelForAttr)) return textOf(labelForAttr);
+      }
+      const wrappingLabel = el.closest('label');
+      if (wrappingLabel && textOf(wrappingLabel)) return textOf(wrappingLabel);
+      const ariaLabel = el.getAttribute('aria-label');
+      if (ariaLabel && ariaLabel.trim()) return ariaLabel.trim();
+      let node = el.previousElementSibling;
+      let hops = 0;
+      while (node && hops < 4) {
+        const text = textOf(node);
+        if (text && !/^[\s*✱•·]+$/.test(text)) return text;
+        node = node.previousElementSibling;
+        hops += 1;
+      }
+      return '';
+    }
+
+    const isChoice = fieldType === 'radio' || fieldType === 'checkbox' || fieldType === 'checkbox_single';
+
+    if (isChoice) {
+      const roleEls = Array.from(document.querySelectorAll('[role="radio"], [role="checkbox"]'));
+      const groups = new Map();
+      for (const el of roleEls) {
+        const key = el.getAttribute('role') + '::' + (el.closest('[role="radiogroup"]') || el.parentElement);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(el);
+      }
+      for (const elements of groups.values()) {
+        const container = elements[0].closest('[role="radiogroup"]') || elements[0].parentElement;
+        const groupLabel = labelFor(container).toLowerCase();
+        if (groupLabel && (groupLabel.includes(target) || target.includes(groupLabel))) return elements;
+      }
+      const nativeEls = Array.from(document.querySelectorAll('input[type="radio"], input[type="checkbox"]'));
+      const seenNames = new Set();
+      for (const el of nativeEls) {
+        if (!el.name || seenNames.has(el.name)) continue;
+        seenNames.add(el.name);
+        const group = nativeEls.filter((c) => c.name === el.name);
+        const optionLabel = labelFor(group[0]).toLowerCase();
+        if (optionLabel && (optionLabel.includes(target) || target.includes(optionLabel))) return group;
+      }
+      return [];
+    }
+
+    if (fieldType === 'dropdown') {
+      const comboboxes = Array.from(document.querySelectorAll('[role="combobox"]'));
+      for (const el of comboboxes) {
+        const l = labelFor(el).toLowerCase();
+        if (l && (l.includes(target) || target.includes(l))) return [el];
+      }
+      const selects = Array.from(document.querySelectorAll('select'));
+      for (const el of selects) {
+        const l = labelFor(el).toLowerCase();
+        if (l && (l.includes(target) || target.includes(l))) return [el];
+      }
+      return [];
+    }
+
+    const fields = Array.from(document.querySelectorAll('input, textarea'));
+    for (const el of fields) {
+      const l = labelFor(el).toLowerCase();
+      if (l && (l.includes(target) || target.includes(l))) return [el];
+    }
+    return [];
+  }
+
   const report = [];
 
   for (const answer of approvedAnswers) {
-    const { id, selector, fieldType, value } = answer;
-    const elements = Array.from(document.querySelectorAll(selector));
+    const { id, selector, fieldType, value, questionText } = answer;
+    let elements = Array.from(document.querySelectorAll(selector));
+    if (elements.length === 0 && questionText) {
+      elements = findElementsByQuestionText(questionText, fieldType);
+    }
     if (elements.length === 0) {
       report.push({ id, status: 'not_found', reason: `No element matches selector ${selector}` });
       continue;

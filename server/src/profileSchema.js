@@ -3,6 +3,7 @@
 // an uploaded file through them before writing. One source of truth for the envelope shape
 // and CURRENT_SCHEMA_VERSION avoids the two ever drifting apart.
 import { MAX_ENTRIES } from './routes/qa-history.js';
+import { isValidKey } from './fieldRegistry.js';
 
 export const CURRENT_SCHEMA_VERSION = 1;
 
@@ -90,6 +91,24 @@ export function validateQaHistoryEntries(entries) {
   return valid.slice(0, MAX_ENTRIES);
 }
 
+// Identity memory travels as a flat { canonicalKey: value } object. Lenient like
+// qaHistory: drop unknown keys (not in the registry) and non-string values rather
+// than failing the whole import — a hand-edited or partial file still imports what's
+// valid.
+export function validateIdentityMemory(memory) {
+  if (memory === undefined || memory === null) return {};
+  if (!isPlainObject(memory)) {
+    throw new Error('"identityMemory" must be an object of key/value pairs.');
+  }
+  const out = {};
+  for (const [key, value] of Object.entries(memory)) {
+    if (isValidKey(key) && typeof value === 'string' && value.trim() !== '') {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 // Recognized top-level profile fields — used to detect a "bare" profile object (no
 // envelope wrapper) below. Keep in sync with validateProfile's own field list.
 const PROFILE_FIELD_KEYS = [
@@ -122,7 +141,8 @@ export function validateEnvelope(body) {
   if (!hasProfileKey && looksLikeBareProfile(body)) {
     const profile = validateProfile(body);
     const qaHistory = validateQaHistoryEntries(body.qaHistory);
-    return { profile, qaHistory };
+    const identityMemory = validateIdentityMemory(body.identityMemory);
+    return { profile, qaHistory, identityMemory };
   }
 
   if (body.app !== 'impleo') {
@@ -140,5 +160,6 @@ export function validateEnvelope(body) {
 
   const profile = validateProfile(body.profile);
   const qaHistory = validateQaHistoryEntries(body.qaHistory);
-  return { profile, qaHistory };
+  const identityMemory = validateIdentityMemory(body.identityMemory);
+  return { profile, qaHistory, identityMemory };
 }

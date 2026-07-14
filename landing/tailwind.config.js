@@ -31,8 +31,24 @@ export default {
           muted: '#737373',
         },
       },
+      // Display scale — marketing-only. The in-app scale (brand guide: 18/14/13/
+      // 12/11px) stays compact and is used verbatim for small text; story
+      // headings need a larger scale. clamp() means one token covers every
+      // breakpoint AND the size is known before paint — no reflow, protecting
+      // the CLS < 0.05 target.
+      fontSize: {
+        'display-xl': ['clamp(2.5rem, 5.5vw, 4rem)', { lineHeight: '1.04', letterSpacing: '-0.025em' }],
+        'display-lg': ['clamp(2rem, 3.8vw, 2.75rem)', { lineHeight: '1.1', letterSpacing: '-0.02em' }],
+        'display-md': ['clamp(1.5rem, 2.4vw, 1.875rem)', { lineHeight: '1.2', letterSpacing: '-0.015em' }],
+        lead: ['1.0625rem', { lineHeight: '1.65' }],
+      },
       fontFamily: {
         sans: [
+          // 'Geist Variable' is the family name Fontsource registers for the
+          // variable package imported in main.jsx — without it first, the stack
+          // silently falls through to Inter/system and Geist never renders.
+          // Plain 'Geist' is kept next for anyone with it installed locally.
+          'Geist Variable',
           'Geist',
           'Inter',
           'ui-sans-serif',
@@ -69,10 +85,33 @@ export default {
           '60%': { opacity: '1', transform: 'scale(1.08)' },
           '100%': { opacity: '1', transform: 'scale(1)' },
         },
+        // Idle ambient motion for the jungle scene — NOT scroll reveals (the
+        // story reveals are GSAP scroll-driven transforms, per the brief's
+        // "no fade-in" rule). These are slow, looping, decorative only.
+        'float-slow': {
+          '0%,100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-10px)' },
+        },
+        'float-slower': {
+          '0%,100%': { transform: 'translateY(0) rotate(0deg)' },
+          '50%': { transform: 'translateY(-16px) rotate(1.5deg)' },
+        },
+        'glow-pulse': {
+          '0%,100%': { opacity: '0.35' },
+          '50%': { opacity: '0.6' },
+        },
+        blink: {
+          '0%,92%,100%': { transform: 'scaleY(1)' },
+          '96%': { transform: 'scaleY(0.1)' },
+        },
       },
       animation: {
         'reveal-up': 'reveal-up 250ms cubic-bezier(0.4,0,0.2,1) both',
         'check-pop': 'check-pop 250ms cubic-bezier(0.4,0,0.2,1) both',
+        'float-slow': 'float-slow 6s ease-in-out infinite',
+        'float-slower': 'float-slower 9s ease-in-out infinite',
+        'glow-pulse': 'glow-pulse 5s ease-in-out infinite',
+        blink: 'blink 5.5s ease-in-out infinite',
       },
     },
   },

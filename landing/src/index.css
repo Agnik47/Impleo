@@ -3,8 +3,14 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * IMPORTANT: no `scroll-behavior: smooth` here. Lenis (providers/
+   * SmoothScrollProvider) owns smooth scrolling; native smooth-scroll would
+   * fight it. When reduced-motion is on, Lenis is not initialized and the
+   * browser's default (instant) scroll is used — which is correct.
+   */
   html {
-    scroll-behavior: smooth;
+    scrollbar-gutter: stable;
   }
 
   body {
@@ -39,18 +45,58 @@
   .chameleon-line {
     background-image: linear-gradient(90deg, #28c94e 0%, #a6d91a 55%, #f5d000 100%);
   }
+
+  /* Deep-jungle radial vignette used behind story sections for atmosphere. */
+  .jungle-radial {
+    background:
+      radial-gradient(120% 80% at 50% -10%, rgba(166, 217, 26, 0.08), transparent 60%),
+      radial-gradient(90% 70% at 80% 110%, rgba(0, 160, 80, 0.1), transparent 55%);
+  }
+
+  /* Hairline grid used in the privacy / architecture section. */
+  .jungle-grid {
+    background-image:
+      linear-gradient(to right, rgba(39, 51, 45, 0.6) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(39, 51, 45, 0.6) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
 }
 
-/* Respect users who prefer reduced motion — kills scroll-reveal + micro-demos. */
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
+@layer utilities {
+  /* Perf hints for elements GSAP transforms on scroll — promotes to their own
+     layer so parallax/horizontal-scroll stays on the compositor. */
+  .will-transform {
+    will-change: transform;
   }
+  .gpu {
+    transform: translateZ(0);
+  }
+
+  /* Mobile horizontal-swipe fallback for the pinned pipeline section: the rail
+     scrolls natively, but the scrollbar itself would sit across the story. */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/*
+ * Reduced motion: kill CSS keyframe/transition motion. Lenis + GSAP are ALSO
+ * gated in JS (see useReducedMotion) so scroll storytelling is disabled and
+ * content is shown in its final state. Story content is visible WITHOUT JS by
+ * default (GSAP sets any hidden-start state at runtime), so this never leaves
+ * content stuck invisible.
+ */
+@media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

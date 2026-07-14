@@ -28,7 +28,8 @@ OUTPUT FORMAT — match this shape exactly, filling in real values:
     "resumeText": "",
     "writingSampleText": ""
   },
-  "qaHistory": []
+  "qaHistory": [],
+  "identityMemory": {}
 }
 
 FIELD GUIDE
@@ -42,6 +43,7 @@ FIELD GUIDE
 - resumeText: the full plain-text content of my resume, cleaned up (no repeated page headers/footers/page numbers). This is the most important field — don't summarize or shorten it.
 - writingSampleText: a past essay or application answer, verbatim, if I gave you one. Otherwise "".
 - qaHistory: always an empty array — there's no prior application history to seed yet.
+- identityMemory: an object of reusable personal-identity values, ONLY for fields explicitly present in what I gave you. Use these exact snake_case keys where applicable: full_name, father_name, mother_name, date_of_birth (YYYY-MM-DD), gender, nationality, marital_status, religion, category, phone, email, address, city, state, district, pincode, country, aadhaar_number, pan_number, passport_number. Omit any key you don't have a real value for — never guess an ID number. Leave it {} if none apply.
 
 HARD RULES
 1. Never hallucinate work experience, job titles, employers, or dates that weren't in what I gave you.

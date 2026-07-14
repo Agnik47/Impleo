@@ -37,6 +37,14 @@ export const api = {
   getQaHistory: () => request('/api/qa-history'),
   appendQaHistory: (entry) =>
     request('/api/qa-history', { method: 'POST', body: JSON.stringify(entry) }),
+  getIdentityMemory: () => request('/api/identity-memory'),
+  saveIdentityMemory: (canonicalKey, value, source) =>
+    request('/api/identity-memory', {
+      method: 'PUT',
+      body: JSON.stringify({ canonicalKey, value, ...(source ? { source } : {}) }),
+    }),
+  deleteIdentityMemory: (canonicalKey) =>
+    request(`/api/identity-memory/${encodeURIComponent(canonicalKey)}`, { method: 'DELETE' }),
   generateAnswers: (formSchema) =>
     request('/api/generate-answers', { method: 'POST', body: JSON.stringify({ formSchema }) }),
   regenerateAnswer: (question, instruction) =>

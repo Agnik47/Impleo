@@ -3,7 +3,7 @@
   "name": "Impleo",
   "version": "0.1.0",
   "description": "Application copilot: extracts form questions, generates personalized answers with AI, fills only what you approve.",
-  "permissions": ["activeTab", "scripting", "sidePanel"],
+  "permissions": ["activeTab", "scripting", "sidePanel", "storage"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",

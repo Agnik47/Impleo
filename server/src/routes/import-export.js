@@ -9,6 +9,7 @@ import {
   validateEnvelope,
   validateProfile,
   validateQaHistoryEntries,
+  validateIdentityMemory,
 } from '../profileSchema.js';
 
 const router = Router();
@@ -23,10 +24,15 @@ router.get('/export', (req, res) => {
     .prepare('SELECT question, answer, context, date FROM qa_history ORDER BY id DESC LIMIT ?')
     .all(MAX_ENTRIES);
 
+  const identityRows = db.prepare('SELECT canonical_key, value FROM identity_memory').all();
+  const identityMemoryObj = {};
+  for (const r of identityRows) identityMemoryObj[r.canonical_key] = r.value;
+
   // Run the saved data back through the same validators used on import, so every file
   // Impleo exports is guaranteed importable by Impleo.
   const profile = validateProfile(JSON.parse(row.data));
   const qaHistory = validateQaHistoryEntries(qaRows);
+  const identityMemory = validateIdentityMemory(identityMemoryObj);
 
   res.json({
     schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -34,22 +40,30 @@ router.get('/export', (req, res) => {
     app: 'impleo',
     profile,
     qaHistory,
+    identityMemory,
   });
 });
 
 router.post('/import', (req, res) => {
   let profile;
   let qaHistory;
+  let identityMemory;
   try {
-    ({ profile, qaHistory } = validateEnvelope(req.body));
+    ({ profile, qaHistory, identityMemory } = validateEnvelope(req.body));
   } catch (err) {
     return res.status(400).json({ ok: false, error: err.message });
   }
 
+  const identityKeys = Object.keys(identityMemory);
+
   if (req.body?.dryRun) {
     return res.json({
       ok: true,
-      summary: { name: profile.personal.name || null, qaHistoryCount: qaHistory.length },
+      summary: {
+        name: profile.personal.name || null,
+        qaHistoryCount: qaHistory.length,
+        identityMemoryCount: identityKeys.length,
+      },
     });
   }
 
@@ -69,10 +83,25 @@ router.post('/import', (req, res) => {
     for (const entry of [...qaHistory].reverse()) {
       insert.run(entry.question, entry.answer, entry.context, entry.date);
     }
+
+    // Full-replace identity memory, consistent with the profile/qa_history overwrite
+    // semantics above. source='import' so the management UI can distinguish it.
+    db.prepare('DELETE FROM identity_memory').run();
+    const now = new Date().toISOString();
+    const insertIdentity = db.prepare(
+      `INSERT INTO identity_memory (canonical_key, value, source, created_at, updated_at)
+       VALUES (?, ?, 'import', ?, ?)`
+    );
+    for (const key of identityKeys) {
+      insertIdentity.run(key, identityMemory[key], now, now);
+    }
   });
   commit();
 
-  res.json({ ok: true, imported: { qaHistoryCount: qaHistory.length } });
+  res.json({
+    ok: true,
+    imported: { qaHistoryCount: qaHistory.length, identityMemoryCount: identityKeys.length },
+  });
 });
 
 export default router;

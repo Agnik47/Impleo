@@ -1220,3 +1220,502 @@ which was already tested last session).
 spot-checked against at least one real AI assistant's output before relying
 on it as the primary onboarding path, since prompt-following quality varies
 by model/provider.
+
+---
+
+## 2026-07-13 — Intelligent Field Memory & Semantic Form Understanding
+
+**Task:** Add a semantic identity layer so Impleo understands what a field *means*
+(not its DOM id), remembers identity values entered once (Father's Name, DOB,
+Aadhaar, Nationality, ...), and reuses them across any future form regardless of
+labeling or language. Source of truth: docs/INTELLIGENT_FIELD_MEMORY.md. Planned in
+plan mode (plan file: we-need-to-plan-glistening-sparrow.md), approved, then built.
+
+**Key design decisions (confirmed with founder in planning):**
+1. HYBRID classification, not a synonym dictionary. A small in-code registry
+   (fieldRegistry.js) does fast, offline, deterministic matching for common fields;
+   the AI classifies whatever the local matcher misses — folded into the generate
+   call that ALREADY runs, so zero extra API cost and multilingual for free. The
+   registry is a KEY SET (what canonical keys exist), not an exhaustive synonym table;
+   aliases are a seed for the local matcher + few-shot hints. Rejected a pure
+   dictionary as unmaintainable across languages.
+2. No per-value confidence stored — confidence belongs to the transient per-form
+   classification, not to a user-confirmed value. Store canonical_key, value, source,
+   created_at, updated_at.
+3. Capture + reuse + basic management UI (view/edit/delete remembered values).
+4. Identity memory IS exported (optional additive envelope key; schemaVersion stays 1
+   so existing v1 files still import), with a strengthened plaintext warning naming
+   Aadhaar/DOB sensitivity.
+
+**Server changes:**
+- server/src/fieldRegistry.js (NEW) — CANONICAL_FIELDS (~20 identity keys with label,
+  type, sensitive flag, English+Hindi seed aliases), isValidKey/labelFor/isSensitiveKey/
+  registryPromptList, and classifyLocally() (diacritic/punctuation-normalizing, offline;
+  exact alias → high, contained → medium, else null so the AI decides).
+- server/src/db.js — new identity_memory table (canonical_key PK, value, source,
+  timestamps) via CREATE TABLE IF NOT EXISTS. NOTE: initial version had a backtick
+  inside the SQL comment which terminated the db.exec template literal — caught by a
+  node --check syntax pass before handoff and fixed (comment reworded without backticks).
+- server/src/routes/generate.js — getIdentityMemory() helper; local-classify each field
+  before the call; buildSystemPrompt() now embeds remembered identity values + the valid
+  canonical-key list and asks the model to return canonicalKey per field (or null, never
+  invented); new mergeAnswer() reconciles AI output with the local match (local wins) and
+  injects any remembered value verbatim server-side (fromMemory=true, high) so reuse never
+  depends on the model echoing correctly. Output shape now
+  [{id, canonicalKey, canonicalLabel, answer, confidence, fromMemory}]. regenerate-answer
+  updated in parallel. Still ONE AI call — classification adds no round-trip.
+- server/src/routes/identity-memory.js (NEW) — GET (with labels for the UI) / PUT (upsert,
+  registry-validated) / DELETE; mounted at /api/identity-memory in index.js. Never touches
+  settings.
+- server/src/profileSchema.js — validateIdentityMemory() (lenient: drops non-registry keys /
+  non-string values like qaHistory); validateEnvelope now returns identityMemory (default {})
+  on both strict and bare-profile paths. CURRENT_SCHEMA_VERSION stays 1.
+- server/src/routes/import-export.js — export envelope now includes identityMemory; import
+  full-replaces the table inside the existing db.transaction (source='import'); dryRun summary
+  gains identityMemoryCount. "Never touch settings/keys" guarantee unchanged.
+
+**Extension changes:**
+- lib/api.js — getIdentityMemory / saveIdentityMemory / deleteIdentityMemory.
+- ReviewFlow.jsx — carry canonicalKey/canonicalLabel/fromMemory/remember into reviewState
+  (remember defaults on for a newly-classified, non-memory value); handleToggleRemember;
+  persist remembered identity values on Fill (mirrors the appendQaHistory Promise.allSettled
+  pattern).
+- components/ReviewCard.jsx — title now shows the semantic label with the raw questionText
+  demoted to a muted "from field: ..." subtitle (fixes the user seeing txtBirthDate_First);
+  a "from memory" chip; a "Remember as <label>" checkbox on classified fields.
+- components/IdentityMemoryManager.jsx (NEW) — view/edit/delete remembered values, rendered
+  in the Onboarding Backup section.
+- components/Onboarding.jsx — mounts the manager; export warning strengthened to name Aadhaar/
+  DOB sensitivity.
+- components/ImportProfileModal.jsx — the AI prompt's output envelope now includes an
+  identityMemory object with the recognized snake_case keys, so AI-generated profiles can seed
+  identity memory (lenient validation drops anything unrecognized).
+- content-scripts/generic-extractor.js — resolveLabel gains generic table-cell heuristics
+  (row-leading cell + column header) before the name/id fallback, reducing DOM-id leakage
+  uniformly across sites. Self-contained (serialization constraint respected).
+
+**Verification status:** NOT run against the app this session — handed off per standing
+preference. Static syntax pass (node --check) run on all 7 modified/new server files; all pass
+after the db.js backtick fix. JSX files not statically checked (Vite build will validate). The
+plan file's Verification section has the full manual test sequence: capture on a DOM-id form,
+reuse across a differently-labeled + a Hindi form (exercises local vs AI paths), DevTools check
+that only ONE generate call fires, management edit/delete, export/import round-trip incl. an old
+v1 file, and graceful degradation with no provider configured.
+
+**Deviations from plan:** none of substance. The resolveLabel table-heuristic (plan §9, marked
+optional/cut-first) was included since it was small. Confirmed the single-AI-call cost invariant
+held (classification folded in, not a second call).
+
+**Known follow-ups:** registry is ~20 keys seeded for Indian gov/identity forms + common
+personal fields; extend CANONICAL_FIELDS as new identity fields show up. Prompt-following
+quality for classification should be spot-checked across providers.
+
+---
+
+## 2026-07-13 — Identity Memory Poisoning fix (root cause + architectural hardening)
+
+**Task:** Investigate and fix a real, reported bug: on an ASP.NET government form,
+"Father/Guardian Name" and "Mother's Name" both misclassified to canonical key
+`full_name` (should be `father_name`/`mother_name`), and with "Remember" defaulting on,
+the same `identity_memory.full_name` row got silently overwritten by three different
+people's names in sequence, poisoning every future form's suggestion for that key.
+Planned in plan mode (same plan file, we-need-to-plan-glistening-sparrow.md, overwritten
+for this task), root-caused by direct code tracing plus an independent design-review
+pass, approved, then implemented.
+
+**Root cause (confirmed by reading the code, not inferred):** the corruption happened
+upstream of BOTH classifiers, in generic-extractor.js's resolveLabel() table-cell
+heuristic (added last session). `row.querySelector('th, td')` unconditionally grabbed
+the ROW's first cell as the label, which is only correct when each row holds exactly
+one label+input pair. This government form packs 3 label/input pairs per row
+(Candidate Name, input, Father/Guardian Name, input, Mother's Name, input), so every
+input in that row got labeled "Candidate Name" - the row's literal first cell, which is
+also a real, intentional alias of full_name in the registry. The local classifier
+wasn't malfunctioning; it correctly matched already-destroyed input. Critical finding
+from the design-review pass: because both the local matcher and the AI receive the same
+corrupted label text, no amount of "require local+AI agreement" cross-validation would
+have caught this specific incident - that's a fix for a different failure class
+(genuinely ambiguous or conflicting labels), not this one.
+
+**A separate claim was checked and corrected mid-plan:** the plan originally also
+alleged an "apostrophe bug" (that "Father's Name" fails to match father_name's
+aliases). Verified empirically by running the normalize() function directly before
+implementing anything - this claim was false. Both the alias and the input text
+normalize through the identical function to the identical string, so they already
+matched correctly at high confidence. The plan file was corrected in place rather than
+silently implementing a fix for a non-problem. The independently real issue nearby (the
+bare 'name' alias being too broad for the medium-confidence fuzzy pass - e.g. "Company
+Name" would false-positive to full_name) was kept and fixed.
+
+**What was built, in tiers:**
+1. extension/content-scripts/generic-extractor.js - resolveLabel()'s table heuristic
+   now counts inputs sharing a row; for more than one (the bug case), walks
+   previousElementSibling backward within the row, skipping empty cells and any cell
+   containing a nested form control (never mistakes another field's input-cell for a
+   label-cell); for exactly one input per row, keeps the original, already-correct,
+   row-wide behavior unchanged. rowspan layouts and div-based fake tables explicitly
+   out of scope, documented as known follow-ups; the thead-fallback's own "position
+   implies role" assumption flagged but not fixed (same bug class, second instance,
+   noted for future awareness).
+2. server/src/fieldRegistry.js - added a small excluded-alias set (currently just
+   'name') skipped in the medium-confidence substring pass only, still eligible for
+   exact match. Added a RISK_CLUSTER_KEYS set (full_name/father_name/mother_name plus
+   all sensitive:true keys) and an isRiskClusterKey() helper.
+3. server/src/routes/generate.js - new resolveCanonicalKey(): local exact match, any
+   key, trusted unconditionally; local fuzzy match outside the risk cluster trusted as
+   before (lower stakes); local fuzzy match inside the risk cluster requires the AI's
+   independently-returned key to agree, else resolves to null ("unresolved") rather
+   than guessing. Fixed "hint-anchoring": the local-match hint is now withheld from the
+   AI specifically for risk-cluster-plus-medium-confidence fields, so its
+   classification is a genuine second opinion instead of complying with "keep the hint
+   if correct." New classificationSource field on each merged answer, kept separate
+   from the existing confidence field, which was previously being conflated as an
+   answer-groundedness signal with classification confidence. mergeAnswer() also now
+   attaches existingMemoryValue (a snapshot of what's currently stored, independent of
+   later edits) at zero extra cost since the data was already in closure. Both
+   generate-answers and regenerate-answer share this logic uniformly.
+4. extension/src/sidepanel/ReviewFlow.jsx - carries classificationSource and
+   existingMemoryValue into reviewState from both generateAnswers() and
+   handleRegenerate(). New same-batch collision guard in handleFill(): groups
+   approved-and-remember-checked entries by canonicalKey before writing; if any key has
+   multiple entries with differing values (the exact failure pattern that occurred),
+   none of them are written, and a warning names the conflicting fields by their raw
+   questionText. This is the most direct defense-in-depth for the reported pattern,
+   purely client-side, no server change.
+5. extension/src/sidepanel/components/ReviewCard.jsx - the "Update remembered value"
+   checkbox now shows the currently-stored value inline when the user has edited a
+   memory-sourced answer away from it, so an overwrite is visible before it's
+   confirmed, no new modal, just richer copy on the existing opt-in checkbox. Added a
+   small muted caption on cards that resolve to an "unresolved" classification, nudging
+   the user to manually add the value via IdentityMemoryManager if they recognize it.
+
+**Tier 7 (regression tests) explicitly skipped:** would have added the repo's first
+test dependency (vitest/jsdom); docs/AGENTS.md states "no automated test suite for v1 -
+not worth it at this scope" and requires asking before adding a dependency. Flagged to
+the founder via a clarifying question rather than added unilaterally; founder chose to
+skip it and rely on manual verification, matching the documented project convention.
+This is the one place the original plan's recommendation was overridden by explicit
+founder decision during implementation.
+
+**Verification status:** node --check passed on all 3 modified plain-JS/server files
+(fieldRegistry.js, generate.js, generic-extractor.js) - no syntax errors. The two
+modified JSX files (ReviewFlow.jsx, ReviewCard.jsx) were not statically checked (will
+validate at Vite build) and, per standing preference, no build or dev server was run
+this session - handed off. The plan file's Verification section lists the full manual
+sequence: reproducing the multi-pair-per-row layout and confirming correct
+classification, confirming the single-pair-per-row and thead-columnar layouts still
+work (no regression), the same-batch collision guard firing on a constructed
+conflicting-values scenario, the risk-cluster agreement/disagreement paths, and a
+DevTools check that hint-withholding didn't add a second generate-answers call.
+
+**Remediation of already-poisoned data:** no automatic detection or cleanup was built
+(undecidable in general, and risks reintroducing the same false-positive problem this
+fix exists to prevent). The founder should manually delete or correct the current bad
+full_name value via the existing IdentityMemoryManager UI (built last session) once
+this fix is verified.
+
+---
+
+## 2026-07-14 — Real-page label-extraction bugs (doubled asterisk, unlabeled question, bare "*" label, stale fill selector)
+
+**Task:** Fix a real bug report from testing against a live Google Form (job application)
+and a live Luma event page (the first real-page testing since these extractors were
+written and flagged "not yet verified against a real page"). Reported symptoms, from
+screenshots: (1) a question rendering as `"Are you Interested for SRE - Ops Role? * *"`
+(doubled required-asterisk), (2) two questions rendering as `"(unlabeled question)"`,
+(3) `Fill: not_found — No element matches selector [data-impleo-id="impleo-gf-4"]` on a
+field that had extracted and generated fine, (4) several Luma review cards titled just
+`"*"` with a generic, unrelated AI-generated answer underneath, and one card titled
+`"Discover Events · Luma"` (the event's own page title, not a real form field). Root-caused
+by reading the three content-script extractors/fillers and `generate.js`'s prompt
+construction directly (not inferred) — no plan-mode design review needed, symptoms mapped
+cleanly onto specific functions.
+
+**Root causes found, one per symptom:**
+1. Doubled asterisk: `ReviewCard.jsx` always appends its own `" *"` for `required` fields,
+   but the extracted `questionText` on some pages already includes the page's own literal
+   `"*"` marker text — fixed at the source (extraction), not the display layer.
+2. `"(unlabeled question)"`: `google-forms.js`'s `findQuestionTitle()` only accepted a
+   zero-child leaf `<div>` as a title candidate; a title wrapped in a nested `<span>`
+   (real Forms markup) has `children.length === 1` and matched neither the heading-role
+   check nor the leaf-div check, falling through to the placeholder string.
+3. Bare `"*"` label: `resolveLabel()`'s (`generic-extractor.js`, duplicated in `luma.js`)
+   `previousElementSibling` walk returned the FIRST sibling with any non-empty text and
+   stopped — when a required marker is rendered as its own separate `<span>*</span>`
+   sibling immediately before the input, that's what got returned instead of continuing
+   back to the real label one hop further.
+4. Generic AI answers: confirmed by reading `generate.js`'s `buildSystemPrompt()` that
+   this is NOT a prompt-quality bug — the no-fabrication/answering rules are correct. It's
+   a direct downstream effect of symptoms 2/3: the model is handed `questionText: "*"` or
+   `"(unlabeled question)"` and has nothing to ground an answer in, so it correctly (per
+   its own instructions) writes something generic. No prompt changes made.
+5. `Discover Events · Luma` mislabeled card: the same `resolveLabel()`, called on a
+   *container* element for Luma's custom `[role="radio"]`/`[role="checkbox"]` groups, had
+   an unbounded `previousElementSibling` walk — with no closely-associated label, it kept
+   walking until it hit the page's own event-title heading.
+6. `Fill: not_found` on a previously-good selector: a genuine live-page timing issue, not
+   a static bug. Google Forms re-renders a question's DOM subtree on some interactions
+   (e.g. a validation-state change), which wipes the `data-impleo-id` stamped at
+   extraction time even though the field is still on the page and was correctly extracted.
+7. Separately (not from a screenshot, found while reading the code): `luma.js`'s native
+   radio/checkbox group path used `questionText: options[0] || el.name` — the first
+   option's OWN label used as the question text, unconditionally wrong whenever a real
+   group label exists.
+
+**What was built, by file:**
+- `extension/content-scripts/generic-extractor.js` — `resolveLabel()`'s sibling walk now
+  skips a candidate whose trimmed text is only a marker (`/^[\s*✱•·]+$/`) and keeps
+  walking, bounded to 4 hops (prevents both the bare-`"*"` bug and, via the hop bound,
+  runaway walks grabbing unrelated text). New `stripTrailingMarker()` helper applied to
+  every `questionText` assignment so a trailing `"*"` from page text never doubles up with
+  the UI's own required-marker.
+- `extension/content-scripts/luma.js` — same three `resolveLabel()` changes ported
+  (duplicated per file, not shared, per `docs/AGENTS.md`'s self-contained content-script
+  constraint). Native radio/checkbox group `questionText` now prefers a real
+  `fieldset`/`legend`, then the label of the group's nearest common-DOM-ancestor
+  container (found via a small ancestor-walk, mirroring how the custom ARIA groups
+  already resolve their own container label), before falling back to
+  `options[0] || el.name`. `fillLumaForm()` gained a fallback: when the stamped selector
+  matches nothing and the answer carries a `questionText`, it re-derives labels for
+  current-DOM radio/checkbox groups, comboboxes, and native inputs/textareas and matches
+  by (case-insensitive, substring-tolerant) label text instead of failing immediately.
+- `extension/content-scripts/google-forms.js` — `findQuestionTitle()` now accepts an
+  `optionTexts` param (the caller already collects these) and, when no `[role="heading"]`
+  is found, considers any `<div>` with no nested `<div>` descendants (relaxed from
+  "zero children," which missed span-wrapped titles, but still excludes wrapper divs
+  whose `textContent` would otherwise concatenate the title with every option — a wrapper
+  div precedes its own children in document order, so an unfiltered "any div" pass would
+  have picked the wrapper's giant concatenated string as the "title"). Filters out
+  marker-only text, the literal string `"Required"`, and any text identical to a
+  already-collected option label. `fillGoogleForm()` gained the same kind of fallback as
+  luma.js's, matching by `[role="heading"]` text within `[role="listitem"]` when the
+  stamped selector misses.
+- `extension/src/sidepanel/ReviewFlow.jsx` — `handleFill()`'s `approvedAnswers` mapping
+  now carries `questionText` alongside the existing `id`/`selector`/`fieldType`/`value`,
+  so both fillers' new fallback paths have something to match against.
+
+**Verified against:** Static read-through + `node --check` (extension's `package.json`
+has `"type": "module"`, so this correctly parses the ESM `export function` syntax) on all
+three edited content scripts — all pass. Per standing preference, no build or dev-server
+run this session; not run against the actual Google Form/Luma pages from the screenshots.
+
+**Acceptance criterion met?** Partial — the code changes directly address every root
+cause traced from the screenshots, but per `docs/AGENTS.md`'s definition-of-done rule 1
+("works against a real page"), this is not done until the founder re-tests against the
+same real Google Form and Luma event URLs.
+
+**Deviations from spec:** None. No prompt changes to `generate.js` (confirmed unnecessary,
+see root cause 4). No shared/imported helper introduced for the duplicated label-resolution
+logic across the three content scripts — kept duplicated per `docs/AGENTS.md`'s
+self-contained-function constraint (MV3 `chrome.scripting.executeScript({ func })`
+serializes each function independently via `toString()`).
+
+**Known follow-ups:** The fill-time recovery fallbacks (google-forms.js, luma.js) match by
+re-derived label text, which is a best-effort heuristic, not guaranteed — if a form's
+label ALSO changed text on re-render (not just its DOM position), the fallback won't find
+it either, and the field will still correctly report `not_found` rather than silently
+filling the wrong control. `generic-extractor.js`/`generic-filler.js` did not get the same
+fill-time recovery fallback — plain HTML forms aren't expected to silently re-render the
+way Google Forms/Luma's React-driven pages do, so the extra complexity wasn't added there;
+revisit if a similar `not_found` report ever surfaces on a generic form. The founder should
+re-test against the exact Google Form and Luma event from the screenshots and confirm: no
+doubled asterisk, no `(unlabeled question)`, no bare `"*"` labels, correct/specific AI
+answers on the previously-mislabeled Luma fields, and that the SRE-Ops field either fills
+directly or recovers via the fallback instead of reporting `not_found`.
+
+---
+
+## 2026-07-14 — Token optimization layer (free-tier survivability: 2-4 forms → target 10-20)
+
+**Task:** The extension exhausted the Groq free tier (llama-3.3-70b-versatile) after ~2-4
+forms. A prior read-only investigation (this session) identified the causes; this task
+implements the fix. Preserve current UX and answer quality; no heavy dependencies (no
+vector DB / embeddings / cloud), per AGENTS.md and the brief.
+
+**Root causes addressed (from the investigation):** flat `max_tokens=4096` on every call
+(Groq/OpenAI pre-flight-check `prompt_tokens + max_tokens` against the TPM budget, so a
+trivial form still books 4096 completion tokens); deterministic fields (name/email/links/
+identity) sent to the LLM and their answers discarded; full `resumeText`+`writingSampleText`
+pasted every call; up to 10 full `qa_history` entries attached every call; and ReviewFlow
+state loss forcing a full re-generate on panel reopen / Settings round-trip.
+
+**What was built:**
+1. `server/src/tokens.js` (NEW) — `estimateTokens()` (dependency-free ~3.6 chars/token
+   heuristic; no cross-provider tokenizer exists and adding one is a disallowed
+   dependency), `computeMaxTokens(generativeFieldCount)` (adaptive completion budget:
+   `220 + 150/field`, clamped [512, 4096] — sizes off the fields that ACTUALLY reach the
+   model, not the whole form: verified 2→520, 10→1720, 25→3970), and `logTokenMetrics()`
+   printing the exact requested breakdown (fields extracted / direct / rule / generated /
+   skipped, prompt / completion / estimated-total tokens).
+2. `server/src/fieldRouter.js` (NEW) — deterministic router. `routeField()` returns
+   direct / rule / generative / skip. DIRECT (0 AI tokens, field omitted from the prompt):
+   identity-memory values, canonical profile values (full_name/email/phone via exact
+   high-confidence local match only — so the risk-cluster guard is preserved), and
+   non-registry profile-direct fields (LinkedIn/GitHub/portfolio/website/location by
+   keyword). RULE: a choice field whose held value matches one of the page's own options
+   verbatim (never invents an option). Everything uncertain falls through to GENERATIVE,
+   exactly as before — no quality loss. `buildResolvedAnswer()` emits the identical
+   client shape `mergeAnswer()` produces, so ReviewCard/ReviewFlow need no changes.
+   Smoke-tested: on a 9-field form (name/email/LinkedIn/GitHub/DOB/country/why-attend/
+   SRE-role/upload) → 5 direct + 1 skip resolved free, only 3 reached the LLM.
+3. `server/src/promptContext.js` (NEW) — relevance-based context selection (rule-based,
+   not embeddings). `selectContext()` always includes cheap structured basics; includes
+   the EXPENSIVE resume/writing-sample/projects/achievements AND qa_history ONLY when a
+   generative field is prose-style (textarea or "tell us / why / describe / experience…"
+   keyword). `compressHistory()` relevance-ranks history against the current questions,
+   keeps top 3, truncates each answer to ~220 chars, drops the context-URL/date. Verified:
+   short "what's your email" form → basics only, profile context 121 chars; essay form →
+   full sections, 2336 chars + 1 truncated history entry.
+4. `server/src/routes/generate.js` (REWIRED) — both endpoints now: route all fields, and
+   **skip the LLM call entirely when zero generative fields remain** (identity/simple
+   forms cost 0 API tokens); size `max_tokens` via `computeMaxTokens`; build the system
+   prompt from the relevance-selected context; gate the identity-classification block
+   (`shouldClassify()`) so pure essay/choice forms don't pay for the ~470-token registry;
+   reassemble answers in original order (deterministic + reconciled-LLM); log metrics. The
+   existing risk-cluster protections (`resolveCanonicalKey`, hint-withholding, `mergeAnswer`)
+   are unchanged and now apply only to the generative subset.
+5. `extension/src/sidepanel/ReviewFlow.jsx` (EDITED) + `extension/manifest.json` (added
+   `"storage"` permission) — persist `{phase, platform, formSchema, reviewState,
+   fillReport, errorMessage}` to `chrome.storage.session`, keyed per tab. On mount, restore
+   an in-progress review (coercing transient/`filling` phases to `reviewing`); guarded by a
+   `hydratedRef` so the persist effect can't clobber a restore with defaults, and transient
+   `extracting`/`generating` phases aren't persisted (would restore to a dead spinner).
+   `resetFlow()`/`Start over` clears the tab's stored state. Reopening the panel or bouncing
+   to Settings and back no longer re-runs generation.
+
+**Before/after token estimates (per call, est.):**
+- Small form, 5 fields all direct (name/email/phone/LinkedIn/DOB): **before ~1,200-5,400 →
+  after ~0** (no LLM call at all).
+- Medium form, 15 fields (say 8 direct, 2 rule, 5 generative incl. essays): **before
+  ~2,050-7,000 → after ~1,000-1,800** (only 5 fields + selected context reach the model;
+  `max_tokens` ~970 instead of 4096).
+- Large form, 30 fields (say 12 direct/rule, 18 generative): **before ~3,200-9,100 → after
+  ~2,200-3,500**, and the pre-flight `max_tokens` reservation drops from a flat 4096 to
+  ~2,900.
+The compounding wins are: (a) the flat 4096 reservation is gone on every call, (b)
+resume/sample/history are omitted from any form without a prose field, and (c) whole forms
+can now cost 0 tokens. Together these are consistent with the 10-20-forms-per-session target
+on the same free Groq tier.
+
+**Verified against:** Static + executable smoke tests only, per standing preference — no
+build/dev-server run this session. `node --check` passes on all 3 new + 1 rewired server
+module; `computeMaxTokens`, `routeField`, and `selectContext` were each run directly with
+representative inputs (results above). NOT verified against the real Groq API or the live
+extension. Handed off for the founder to: `cd server && npm run dev`, `cd extension &&
+npm run build`, reload unpacked, then run a real form and watch the `[Impleo tokens]` lines
+in the server terminal to confirm the routing counts and token drop, and confirm reopening
+the panel restores the review instead of regenerating.
+
+**Acceptance criterion met?** Partial — implements every requested piece and the numbers
+check out in isolation, but AGENTS.md rule 1 (works against a real page) requires the
+founder to confirm against a real Groq key + real forms.
+
+**Deviations from spec / brief:** None of substance. Used a per-generative-field adaptive
+budget rather than the brief's fixed field-count tiers (the brief invited a better
+heuristic) — it scales off the count that actually drives cost. Token metrics are
+estimates, not real API `usage` (kept `providers.js`'s `chat()` returning a plain string to
+avoid touching test-key.js and every provider; the brief's own example labels them
+"estimated"). No changes to the four hard-rule areas (no auto-submit, no direct LLM calls
+from the panel/content scripts, no hosted backend, no fabrication — direct routing only
+copies values the user actually provided).
+
+**Known follow-ups:** (1) If accurate real-usage accounting is later wanted, extend
+`providers.js` `chat()` to also surface each vendor's `usage`/`usageMetadata` and log that
+instead of the estimate. (2) The rule-based choice router only fires when a held value
+matches an option verbatim; genuinely-inferred choices (e.g. "Are you in Bangalore?" from
+`location`) still go to the LLM by design (inferring them deterministically risks wrong
+answers). (3) Session state is keyed by tab id, not URL — if a tab navigates to a different
+form without "Start over", the stale review could restore; acceptable for v1, revisit if it
+bites.
+
+---
+
+### Landing — Story-driven landing page redesign (v3), sections + layout + wiring — 2026-07-14
+
+**What was built:**
+Completed the interrupted v3 story redesign of `landing/`. A prior session had built the
+engine (providers, hooks, motion tokens, animation helpers, components, mascot/jungle
+assets) but never created `sections/` or `layouts/` — so `App.jsx` was still rendering the
+OLD pre-redesign page out of `src/ui.jsx`, and none of the new architecture was reachable.
+This task wrote the nine story beats (`src/sections/`, one file per beat, in the order
+UPDATED_DESIGN_MD.md requires: Hero → Pain → Discovery → Extraction → Review → Privacy →
+Providers → Success → CTA), the `StoryLayout` shell that owns Lenis + the mascot journey +
+nav/rail/footer, a `StoryRail` chapter index with `useActiveSection`, and rewired `App.jsx`
+to render the story. Deleted the superseded `src/ui.jsx` + `src/ReviewCardMock.jsx`.
+
+**By file (new unless noted):**
+- `src/layouts/StoryLayout.jsx` — provider stack + skip link + nav/rail/mascot/footer.
+- `src/sections/*.jsx` (9) + `src/sections/index.js` — each beat owns its scenery, its GSAP
+  setup (via `useGsap`), and its mascot state (via `useMascotSection`).
+- `src/hooks/useActiveSection.js`, `src/components/StoryRail.jsx` — chapter rail.
+- `src/components/HeroCanopy.jsx` + `src/assets/jungle/CanopyScene.jsx` — the R3F scene.
+- `src/App.jsx` (REWRITTEN) — now only the running order.
+- `src/components/primitives.jsx` (EDITED) — added `Section` (forwardRef), `Heading`, `Lead`.
+- `src/components/PersistentMascot.jsx` (EDITED) — docks during hero; hop/float un-conflicted.
+- `tailwind.config.js` (EDITED) — added the display `fontSize` scale the file's own comment
+  had promised but never defined; `'Geist Variable'` fronts the sans stack.
+- `src/main.jsx`, `package.json`, `src/index.css` (EDITED).
+
+**Bugs found and fixed during self-review (all in code written this session unless noted):**
+1. `Heading`/`Lead` didn't spread `...props`, silently swallowing the `[data-reveal]`
+   attribute every section tags them with — every heading would have been dropped from the
+   scroll choreography. Root cause of the whole class: `storyReveal.js` selects by attribute.
+2. Transform contention (4 sites): GSAP writes inline `transform`, but CSS keyframes
+   (`animate-float-slow`) and Tailwind transform utilities (`rotate`, `-translate-y-2`)
+   target the same property — the CSS animation wins, so the GSAP motion silently never
+   renders. Fixed by giving each its own element (hero mascot, pain scatter cards, discovery
+   cards, success mascot).
+3. Same contention pre-existed in `PersistentMascot` (NOT written this session): the
+   state-change "hop" could never have been visible under `animate-float-slow`. Fixed.
+4. `overflow-x-clip` on `<main>` (mine) risked cropping ScrollTrigger's `position:fixed` pin
+   for the horizontal section; removed — `body { overflow-x: hidden }` already covers it.
+5. Missing `relative` on two mascot wrappers would have anchored their `absolute` glow to the
+   section, washing the whole beat.
+6. Nested `[data-reveal]` on both wrapper and child in FinalCTA → double transform.
+
+**Verified against:** Static only. All relative imports resolve (scripted check, 42 files).
+Per the standing preference in this repo, no `npm install` / `npm run build` / dev-server run
+this session — and the two new dependencies mean **the build cannot currently succeed until
+`npm install` is run**. NOT verified in a browser: no Lighthouse/CLS measurement, the R3F
+canopy has never been executed, Geist has never been rendered, and the pinned horizontal
+scroll + Lenis + ScrollTrigger interaction is unobserved. These are the highest-risk unknowns.
+
+**Acceptance criterion met?** Partial. Every required section, animation requirement and the
+mandated folder structure are implemented, and the forbidden patterns are avoided by
+construction. But AGENTS.md's definition-of-done rule 1 (works against a real page) and the
+brief's own Lighthouse 90+ / CLS < 0.05 targets are unmeasured — they are claims about
+runtime behaviour and cannot be asserted from a static read-through.
+
+**Deviations from spec:**
+- **R3F scope.** The brief asks for React Three Fiber "where appropriate" and lists Drei.
+  Full-site R3F conflicts with Lighthouse 90+/mobile. Asked the founder, who chose
+  **hero-only**: one lazy-loaded chunk gated on desktop + WebGL + motion-allowed + on-screen,
+  so phones/reduced-motion never download three.js. **Drei is not used** — nothing in the
+  scene needed it and it is pure bundle weight. Locomotive not used (Lenis, already built).
+- **`@react-three/fiber` pinned to v8**, not latest: v9 requires React 19, this app is React
+  18.3. Upgrading fiber without React will break the build.
+- **Framer Motion listed in the brief but not used** — GSAP+ScrollTrigger and CSS cover every
+  beat; adding a second animation runtime is bundle cost for no capability.
+- **FAQ** is rendered inside the CTA beat rather than as a 10th section, to keep the story
+  spine at the nine beats the brief specifies while retaining the content.
+- **No GIF/Lottie assets authored.** Everything is SVG/canvas/WebGL — a Lottie runtime and
+  GIFs would both cost bytes against the perf budget for motion already achieved in-engine.
+- Mobile does NOT get the pinned horizontal scroll: it gets a native snap-swipe rail
+  (`gsap.matchMedia`, lg+ only). Pinned scroll-jacking fights touch momentum; this protects
+  the "maintain mobile performance" requirement.
+- Only `@fontsource-variable/geist` (Sans) was added, not Geist Mono. The prominent clocks
+  still use the default system mono stack; flagged as a follow-up rather than assumed.
+
+**Known issues / follow-ups:**
+1. **`npm install` is required before anything builds** (`@fontsource-variable/geist`,
+   `@react-three/fiber@8`, `three`). Founder should run it, then `npm run build`/`npm run dev`
+   in `landing/`.
+2. Perf targets unmeasured. The hero now stacks SVG + a 2D canvas + a WebGL canvas; the R3F
+   chunk is the thing to watch on a Lighthouse run. If mobile regresses, the canopy gate is
+   one component (`HeroCanopy.jsx`) and can be dropped without touching any section.
+3. `CHROME_STORE_URL` / `GITHUB_URL` in `lib/constants.js` are still `'#'` placeholders.
+4. The `landing/` app is absent from AGENTS.md's project-structure tree (pre-existing).
+5. `landing/Assets/` (an .mp4 and a standalone mascot .html) is unreferenced by the site —
+   left untouched; unclear if it's intended source material.
+6. Reduced-motion resolves each scroll-driven beat to its END state (cards filled, answers
+   approved) so copy and visuals never contradict; worth an actual pass with the OS setting on.

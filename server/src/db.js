@@ -37,6 +37,19 @@ db.exec(`
     context TEXT,
     date TEXT NOT NULL
   );
+
+  -- Semantic identity memory: one value per canonical identity key (father_name,
+  -- date_of_birth, aadhaar_number, ...), entered once and reused across any form.
+  -- canonical_key is the primary key so each identity value is a singleton, upserted
+  -- on conflict. Kept separate from the profile blob (freeform) and never mixed with
+  -- the settings table (API keys). See server/src/fieldRegistry.js for the valid keys.
+  CREATE TABLE IF NOT EXISTS identity_memory (
+    canonical_key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    source TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 `);
 
 // Migrate installs created before multi-provider support: the settings table

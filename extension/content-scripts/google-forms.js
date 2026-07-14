@@ -13,13 +13,37 @@ export function extractGoogleForm() {
     return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
   }
 
-  function findQuestionTitle(container) {
+  // Matches text that is ONLY a required-field marker -- used to filter out a
+  // marker rendered as its own div rather than mistaking it for the title.
+  const MARKER_ONLY_RE = /^[\s*✱•·]+$/;
+  const TRAILING_MARKER_RE = /[\s]*[*✱]+\s*$/;
+  function stripTrailingMarker(text) {
+    return String(text || '').replace(TRAILING_MARKER_RE, '').trim();
+  }
+
+  // optionTexts lets the caller pass in the option labels it already
+  // collected (radios/checkboxes) so they can be excluded from title
+  // candidates -- without this, a question with no [role="heading"] whose
+  // first option happens to be the first div with text gets its option
+  // mistaken for the title.
+  function findQuestionTitle(container, optionTexts) {
     const heading = container.querySelector('[role="heading"]');
     if (heading && textOf(heading)) return textOf(heading);
-    const leafDivs = Array.from(container.querySelectorAll('div')).filter(
-      (d) => d.children.length === 0 && textOf(d).length > 0
-    );
-    return leafDivs.length > 0 ? textOf(leafDivs[0]) : '(unlabeled question)';
+    // Previously required a zero-child "leaf" div, which misses titles
+    // wrapped in a nested <span> (real Google Forms markup does this) and
+    // fell through to '(unlabeled question)'. Relaxed to "no nested <div>
+    // descendants" instead -- still excludes wrapper divs (which would
+    // otherwise concatenate the title + every option's text into one
+    // candidate, since a wrapper div precedes its own children in document
+    // order), but tolerates inline wrapping like <span>. First surviving
+    // candidate wins (title normally precedes description/options in DOM
+    // order); only marker-only and option-duplicate text is excluded.
+    const seenOptions = new Set((optionTexts || []).map((t) => String(t || '').trim()).filter(Boolean));
+    const candidates = Array.from(container.querySelectorAll('div'))
+      .filter((d) => d.querySelectorAll('div').length === 0)
+      .map((d) => textOf(d))
+      .filter((t) => t.length > 0 && !MARKER_ONLY_RE.test(t) && !seenOptions.has(t) && t !== 'Required');
+    return candidates.length > 0 ? candidates[0] : '(unlabeled question)';
   }
 
   function isRequired(container) {
@@ -58,32 +82,37 @@ export function extractGoogleForm() {
       continue; // section header or non-question listitem
     }
 
-    const questionText = findQuestionTitle(item);
     const required = isRequired(item);
 
     if (radios.length > 0) {
       const options = radios.map((r) => r.getAttribute('aria-label') || r.getAttribute('data-value') || textOf(r));
+      const questionText = stripTrailingMarker(findQuestionTitle(item, options));
       const id = stampId(radios);
       results.push({ id, questionText, fieldType: 'radio', options, required, selector: `[data-impleo-id="${id}"]` });
     } else if (checkboxes.length > 0) {
       const options = checkboxes.map(
         (c) => c.getAttribute('aria-label') || c.getAttribute('data-answer-value') || textOf(c)
       );
+      const questionText = stripTrailingMarker(findQuestionTitle(item, options));
       const fieldType = checkboxes.length > 1 ? 'checkbox' : 'checkbox_single';
       const id = stampId(checkboxes);
       results.push({ id, questionText, fieldType, options, required, selector: `[data-impleo-id="${id}"]` });
     } else if (listboxes.length > 0) {
       const listbox = listboxes[0];
       const options = Array.from(listbox.querySelectorAll('[role="option"]')).map(textOf).filter(Boolean);
+      const questionText = stripTrailingMarker(findQuestionTitle(item, options));
       const id = stampId([listbox]);
       results.push({ id, questionText, fieldType: 'dropdown', options, required, selector: `[data-impleo-id="${id}"]` });
     } else if (textareas.length > 0) {
+      const questionText = stripTrailingMarker(findQuestionTitle(item, []));
       const id = stampId([textareas[0]]);
       results.push({ id, questionText, fieldType: 'textarea', options: [], required, selector: `[data-impleo-id="${id}"]` });
     } else if (fileInputs.length > 0) {
+      const questionText = stripTrailingMarker(findQuestionTitle(item, []));
       const id = stampId([fileInputs[0]]);
       results.push({ id, questionText, fieldType: 'upload', options: [], required, selector: `[data-impleo-id="${id}"]` });
     } else if (textInputs.length > 0) {
+      const questionText = stripTrailingMarker(findQuestionTitle(item, []));
       const id = stampId([textInputs[0]]);
       results.push({ id, questionText, fieldType: 'text', options: [], required, selector: `[data-impleo-id="${id}"]` });
     }
@@ -124,11 +153,47 @@ export function fillGoogleForm(approvedAnswers) {
     return match || null;
   }
 
+  function textOf(el) {
+    return el ? el.textContent.replace(/\s+/g, ' ').trim() : '';
+  }
+
+  // Google Forms re-renders a question's DOM subtree on some interactions
+  // (e.g. a validation-state change on blur), which wipes the data-impleo-id
+  // stamped at extraction time even though the question is still on the
+  // page. When the stamped selector no longer matches, re-scan listitems and
+  // re-locate the field by its visible question heading instead.
+  function findElementsByQuestionText(questionText, fieldType) {
+    const target = String(questionText || '').trim().toLowerCase();
+    if (!target) return [];
+    const listItems = Array.from(document.querySelectorAll('[role="listitem"]'));
+    for (const item of listItems) {
+      const heading = item.querySelector('[role="heading"]');
+      const headingText = heading ? textOf(heading).toLowerCase() : '';
+      if (!headingText || !(headingText.includes(target) || target.includes(headingText))) continue;
+      if (fieldType === 'radio') return Array.from(item.querySelectorAll('[role="radio"]'));
+      if (fieldType === 'checkbox' || fieldType === 'checkbox_single') {
+        return Array.from(item.querySelectorAll('[role="checkbox"]'));
+      }
+      if (fieldType === 'dropdown') return Array.from(item.querySelectorAll('[role="listbox"]'));
+      if (fieldType === 'textarea') return Array.from(item.querySelectorAll('textarea'));
+      if (fieldType === 'upload') return Array.from(item.querySelectorAll('input[type="file"]'));
+      return Array.from(
+        item.querySelectorAll(
+          'input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input[type="number"]'
+        )
+      );
+    }
+    return [];
+  }
+
   const report = [];
 
   for (const answer of approvedAnswers) {
-    const { id, selector, fieldType, value } = answer;
-    const elements = Array.from(document.querySelectorAll(selector));
+    const { id, selector, fieldType, value, questionText } = answer;
+    let elements = Array.from(document.querySelectorAll(selector));
+    if (elements.length === 0 && questionText) {
+      elements = findElementsByQuestionText(questionText, fieldType);
+    }
     if (elements.length === 0) {
       report.push({ id, status: 'not_found', reason: `No element matches selector ${selector}` });
       continue;

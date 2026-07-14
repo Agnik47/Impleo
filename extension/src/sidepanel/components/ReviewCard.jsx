@@ -38,7 +38,7 @@ const ICONS = {
   chevron: 'm6 9 6 6 6-6',
 };
 
-function ReviewCard({ question, review, fillResult, onAccept, onEdit, onSkip, onRegenerate }) {
+function ReviewCard({ question, review, fillResult, onAccept, onEdit, onSkip, onRegenerate, onToggleRemember }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(review?.answer ?? '');
   const [instruction, setInstruction] = useState('');
@@ -84,15 +84,37 @@ function ReviewCard({ question, review, fillResult, onAccept, onEdit, onSkip, on
       className={`min-w-0 max-w-full space-y-2 rounded-card border bg-surface-card p-3 shadow-soft-sm transition-colors duration-150 ${statusStyles[review?.status] || statusStyles.pending}`}
     >
       <div className="flex min-w-0 items-start justify-between gap-2">
-        <p className="min-w-0 break-words text-card text-ink-primary">
-          {question.questionText}
-          {question.required && <span className="text-signature"> *</span>}
-        </p>
-        {review?.confidence && (
-          <span className={`shrink-0 rounded-btn px-2 py-0.5 text-caption capitalize ${confidenceStyles[review.confidence] || ''}`}>
-            {review.confidence}
-          </span>
-        )}
+        <div className="min-w-0">
+          {/* When the field was semantically classified, lead with the human label
+              (e.g. "Father's Name") and demote the raw extracted text (e.g. a DOM id
+              like txtFatherName_First) to a muted subtitle — the user should never
+              see the identifier as the primary label. */}
+          <p className="min-w-0 break-words text-card text-ink-primary">
+            {review?.canonicalLabel || question.questionText}
+            {question.required && <span className="text-signature"> *</span>}
+          </p>
+          {review?.canonicalLabel && question.questionText && (
+            <p className="min-w-0 break-words text-caption text-ink-muted">
+              from field: {question.questionText}
+            </p>
+          )}
+          {review?.classificationSource === 'unresolved' && (
+            <p className="min-w-0 break-words text-caption text-signature">
+              This looked like it might be a rememberable identity field, but couldn't be
+              confirmed — add it manually in Backup if you recognize it.
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {review?.confidence && (
+            <span className={`rounded-btn px-2 py-0.5 text-caption capitalize ${confidenceStyles[review.confidence] || ''}`}>
+              {review.confidence}
+            </span>
+          )}
+          {review?.fromMemory && (
+            <span className="rounded-btn bg-lime/15 px-2 py-0.5 text-caption text-lime">from memory</span>
+          )}
+        </div>
       </div>
 
       {editing ? (
@@ -146,6 +168,31 @@ function ReviewCard({ question, review, fillResult, onAccept, onEdit, onSkip, on
           Fill: {fillResult.status}
           {fillResult.reason ? ` — ${fillResult.reason}` : ''}
         </p>
+      )}
+
+      {review?.canonicalKey && (
+        <label className="flex min-w-0 items-center gap-2 break-words text-caption text-ink-secondary">
+          <input
+            type="checkbox"
+            checked={Boolean(review.remember)}
+            onChange={(e) => onToggleRemember(question.id, e.target.checked)}
+            className="shrink-0 accent-brand"
+          />
+          <span className="min-w-0 break-words">
+            {review.fromMemory && review.existingMemoryValue != null && answerText !== review.existingMemoryValue ? (
+              <>
+                Update remembered <span className="text-ink-primary">{review.canonicalLabel}</span> — currently
+                &quot;<span className="text-ink-primary">{review.existingMemoryValue}</span>&quot; — to this value
+              </>
+            ) : (
+              <>
+                {review.fromMemory ? 'Update remembered ' : 'Remember as '}
+                <span className="text-ink-primary">{review.canonicalLabel}</span>
+                {review.fromMemory ? ' value' : ''} for future forms
+              </>
+            )}
+          </span>
+        </label>
       )}
 
       <div className="flex flex-wrap items-center gap-1.5">

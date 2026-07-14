@@ -2,6 +2,19 @@
 // function via toString() and re-parses it inside the target page's
 // isolated world, so it cannot reference anything outside its own body.
 export function extractGenericForm() {
+  // Matches text that is ONLY a required-field marker (an asterisk/bullet,
+  // maybe repeated, maybe with whitespace) and nothing else — used to skip
+  // over a marker rendered as its own DOM node (a separate <span>*</span>
+  // sibling of the real label) instead of mistaking it for the label itself.
+  const MARKER_ONLY_RE = /^[\s*✱•·]+$/;
+  // Strips a trailing marker segment off an otherwise-real label (e.g.
+  // "Tech Stack *" -> "Tech Stack") so the required asterisk isn't shown
+  // twice when the UI also renders its own "*" for required fields.
+  const TRAILING_MARKER_RE = /[\s]*[*✱]+\s*$/;
+  function stripTrailingMarker(text) {
+    return String(text || '').replace(TRAILING_MARKER_RE, '').trim();
+  }
+
   function resolveLabel(el) {
     if (el.id) {
       const labelFor = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
@@ -16,11 +29,67 @@ export function extractGenericForm() {
       const referenced = document.getElementById(ariaLabelledby);
       if (referenced && referenced.textContent.trim()) return referenced.textContent.trim();
     }
+    // Bounded to a few hops: a required-marker span is usually 1 hop before
+    // the real label, but walking indefinitely risks grabbing unrelated text
+    // (e.g. a distant page heading) on pages with sparse label markup.
     let node = el.previousElementSibling;
-    while (node) {
+    let hops = 0;
+    const MAX_SIBLING_HOPS = 4;
+    while (node && hops < MAX_SIBLING_HOPS) {
       const text = node.textContent && node.textContent.trim();
-      if (text) return text;
+      if (text && !MARKER_ONLY_RE.test(text)) return text;
       node = node.previousElementSibling;
+      hops += 1;
+    }
+    // Table layouts (common on legacy/government forms): a field's label is usually
+    // in a nearby cell — not a sibling of the input in the flat previousSibling sense.
+    // Generic DOM structure, not a per-site rule.
+    const cell = el.closest('td, th');
+    if (cell) {
+      const row = cell.closest('tr');
+      if (row) {
+        const inputsInRow = row.querySelectorAll('input, textarea, select');
+        if (inputsInRow.length > 1) {
+          // Multiple fields share this row (common in compact forms — several
+          // label/input pairs packed side by side to save vertical space). The row's
+          // first cell is only the correct label for the FIRST field in the row; for
+          // every other field it would silently attribute an unrelated field's label
+          // (this exact bug previously misclassified Father's Name / Mother's Name as
+          // Full Name because they shared a row with the Candidate Name field). Walk
+          // backward from THIS field's own cell instead, skipping empty cells and any
+          // cell that itself holds another field's control (never treat another
+          // field's input-cell as a label-cell).
+          let node = cell.previousElementSibling;
+          while (node) {
+            if (
+              (node.tagName === 'TD' || node.tagName === 'TH') &&
+              !node.querySelector('input, textarea, select')
+            ) {
+              const t = node.textContent && node.textContent.trim();
+              if (t) return t;
+            }
+            node = node.previousElementSibling;
+          }
+        } else {
+          // Exactly one field in this row — the row's first cell is reliably its label.
+          const firstCell = row.querySelector('th, td');
+          if (firstCell && firstCell !== cell) {
+            const t = firstCell.textContent && firstCell.textContent.trim();
+            if (t) return t;
+          }
+        }
+
+        const table = cell.closest('table');
+        const colIndex = Array.prototype.indexOf.call(row.children, cell);
+        if (table && colIndex >= 0) {
+          const headerRow = table.querySelector('thead tr') || table.querySelector('tr');
+          if (headerRow && headerRow !== row && headerRow.children[colIndex]) {
+            const t = headerRow.children[colIndex].textContent &&
+              headerRow.children[colIndex].textContent.trim();
+            if (t) return t;
+          }
+        }
+      }
     }
     if (el.placeholder) return el.placeholder;
     if (el.name) return el.name;
@@ -65,7 +134,9 @@ export function extractGenericForm() {
       const fieldType = type === 'radio' ? 'radio' : group.length > 1 ? 'checkbox' : 'checkbox_single';
       const fieldset = group[0].closest('fieldset');
       const legend = fieldset && fieldset.querySelector('legend');
-      const questionText = legend && legend.textContent.trim() ? legend.textContent.trim() : options[0] || el.name;
+      const questionText = stripTrailingMarker(
+        legend && legend.textContent.trim() ? legend.textContent.trim() : options[0] || el.name
+      );
       const id = stampId(group);
       results.push({
         id,
@@ -79,7 +150,7 @@ export function extractGenericForm() {
     }
 
     const fieldType = fieldTypeFor(el);
-    const questionText = resolveLabel(el);
+    const questionText = stripTrailingMarker(resolveLabel(el));
     const options =
       fieldType === 'dropdown'
         ? Array.from(el.options || [])
