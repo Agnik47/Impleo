@@ -154,6 +154,68 @@ export const CANONICAL_FIELDS = [
     sensitive: true,
     aliases: ['passport number', 'passport no', 'passport', 'पासपोर्ट नंबर'],
   },
+
+  // --- Situational fields ------------------------------------------------
+  // Unlike everything above, these aren't identity — they're a current *status*
+  // that changes over time (a raise, a resignation). They're registered here
+  // anyway because they share the property that matters: one short value the
+  // user states once and every job form then asks for in its own wording. Their
+  // absence was the whole reported "Impleo never remembers my CTC" bug — with no
+  // key to classify to, the router had nothing to store an edit under.
+  //
+  // Deliberately NOT marked sensitive: that flag feeds RISK_CLUSTER_KEYS, which
+  // forces a field to take the expensive local+AI-agreement path. It's scoped to
+  // government/financial *identifiers* (Aadhaar/PAN/passport), where a
+  // misclassification is unrecoverable. A salary figure is neither an identifier
+  // nor unrecoverable — it's reviewed on-screen before it's ever typed.
+  {
+    key: 'current_ctc',
+    label: 'Current CTC',
+    type: 'text',
+    sensitive: false,
+    // Bare 'ctc' lives here and nowhere else, so it acts as the default for
+    // unrecognized CTC phrasings ("Annual CTC"). Every expected_ctc alias below
+    // is longer, and classifyLocally prefers the longest match — so "Expected
+    // CTC" still resolves to expected_ctc rather than being caught by it.
+    aliases: [
+      'ctc', 'current ctc', 'current fixed ctc', 'fixed ctc', 'current salary',
+      'present ctc', 'present salary', 'existing salary', 'current compensation',
+      'present compensation', 'current package', 'current annual salary',
+      'वर्तमान वेतन',
+    ],
+  },
+  {
+    key: 'expected_ctc',
+    label: 'Expected CTC',
+    type: 'text',
+    sensitive: false,
+    aliases: [
+      'expected ctc', 'expected salary', 'expected compensation', 'expected package',
+      'salary expectation', 'salary expectations', 'ctc expectation', 'desired salary',
+      'desired compensation', 'expected annual salary', 'अपेक्षित वेतन',
+    ],
+  },
+  {
+    key: 'notice_period_days',
+    label: 'Notice Period (days)',
+    type: 'text',
+    sensitive: false,
+    aliases: [
+      'notice period', 'notice period in days', 'notice period days', 'joining availability',
+      'available from', 'availability to join', 'days to join', 'immediate joining',
+      'earliest joining date', 'earliest start date', 'when can you join',
+    ],
+  },
+  {
+    key: 'work_mode',
+    label: 'Work Mode',
+    type: 'select',
+    sensitive: false,
+    aliases: [
+      'work mode', 'preferred work mode', 'work preference', 'work type',
+      'work location preference', 'remote or onsite', 'mode of work',
+    ],
+  },
 ];
 
 export const CANONICAL_KEYS = new Set(CANONICAL_FIELDS.map((f) => f.key));
@@ -197,7 +259,12 @@ export function registryPromptList() {
 // Lowercase, strip diacritics (é -> e; leaves Devanagari intact — it has no combining
 // accents we want to drop here), drop punctuation, collapse whitespace. Deterministic
 // and offline; the same normalization is applied to both the field text and aliases.
-function normalize(text) {
+//
+// Exported because it is also the key-derivation function for the learned-answer
+// store (learnedMemory.js): a question's normalized form IS its primary key there,
+// so any drift between that and alias matching would silently orphan saved rows.
+// One implementation, three callers (here, fieldRouter.js, learnedMemory.js).
+export function normalizeText(text) {
   return String(text ?? '')
     .toLowerCase()
     .normalize('NFKD')
@@ -210,7 +277,7 @@ function normalize(text) {
 // Precompute normalized aliases once at module load.
 const NORMALIZED_ALIASES = CANONICAL_FIELDS.map((f) => ({
   key: f.key,
-  aliases: f.aliases.map(normalize).filter(Boolean),
+  aliases: f.aliases.map(normalizeText).filter(Boolean),
 }));
 
 // Generic single-word aliases that are a substring of many other, more specific
@@ -226,7 +293,7 @@ const FUZZY_MATCH_EXCLUDED = new Set(['name']);
 // text (or vice-versa) -> medium. Anything fuzzier is left for the AI in generate.js,
 // so we never guess here.
 export function classifyLocally(questionText) {
-  const q = normalize(questionText);
+  const q = normalizeText(questionText);
   if (!q) return null;
 
   for (const { key, aliases } of NORMALIZED_ALIASES) {

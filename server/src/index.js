@@ -8,6 +8,7 @@ import testKeyRouter from './routes/test-key.js';
 import generateRouter from './routes/generate.js';
 import importExportRouter from './routes/import-export.js';
 import identityMemoryRouter from './routes/identity-memory.js';
+import learnedAnswersRouter from './routes/learned-answers.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -34,6 +35,7 @@ app.use('/api/profile', profileRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/qa-history', qaHistoryRouter);
 app.use('/api/identity-memory', identityMemoryRouter);
+app.use('/api/learned-answers', learnedAnswersRouter);
 app.use('/api/test-key', testKeyRouter);
 app.use('/api', generateRouter);
 app.use('/api', importExportRouter);

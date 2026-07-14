@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api } from '../lib/api.js';
 import ImportProfileModal from './ImportProfileModal.jsx';
 import IdentityMemoryManager from './IdentityMemoryManager.jsx';
+import LearnedAnswersManager from './LearnedAnswersManager.jsx';
 
 const emptyForm = {
   personal: { name: '', email: '', phone: '', location: '' },
@@ -254,6 +255,10 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
 
         <div className="border-t border-surface-border pt-2">
           <IdentityMemoryManager />
+        </div>
+
+        <div className="border-t border-surface-border pt-2">
+          <LearnedAnswersManager />
         </div>
       </Section>
 

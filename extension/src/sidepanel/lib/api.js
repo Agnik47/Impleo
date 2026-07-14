@@ -45,6 +45,17 @@ export const api = {
     }),
   deleteIdentityMemory: (canonicalKey) =>
     request(`/api/identity-memory/${encodeURIComponent(canonicalKey)}`, { method: 'DELETE' }),
+  getLearnedAnswers: () => request('/api/learned-answers'),
+  // Records a user-confirmed answer so the same question resolves for free next
+  // time. The server decides whether the answer is actually learnable (see
+  // learnedMemory.js) and answers { ok: true, learned: false } when it isn't.
+  saveLearnedAnswer: ({ questionText, answer, canonicalKey, fieldType, source }) =>
+    request('/api/learned-answers', {
+      method: 'PUT',
+      body: JSON.stringify({ questionText, answer, canonicalKey, fieldType, source }),
+    }),
+  deleteLearnedAnswer: (questionNorm) =>
+    request(`/api/learned-answers/${encodeURIComponent(questionNorm)}`, { method: 'DELETE' }),
   generateAnswers: (formSchema) =>
     request('/api/generate-answers', { method: 'POST', body: JSON.stringify({ formSchema }) }),
   regenerateAnswer: (question, instruction) =>

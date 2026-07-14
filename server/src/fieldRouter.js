@@ -22,7 +22,7 @@
 // (father_name/mother_name/sensitive IDs are still resolved there, with
 // local+AI agreement, for anything not an exact match).
 
-import { classifyLocally, labelFor, isValidKey } from './fieldRegistry.js';
+import { classifyLocally, labelFor, isValidKey, isRiskClusterKey, normalizeText } from './fieldRegistry.js';
 
 const CHOICE_TYPES = new Set(['radio', 'checkbox_single', 'dropdown', 'checkbox']);
 
@@ -30,18 +30,10 @@ function hasOwn(obj, key) {
   return obj && Object.prototype.hasOwnProperty.call(obj, key);
 }
 
-// Same normalization shape as fieldRegistry's private normalize(). Duplicated
-// (small) rather than exported-and-shared to keep fieldRegistry's surface
-// focused; both must stay in sync if the rule ever changes.
-function normalize(text) {
-  return String(text ?? '')
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+// Was a local copy of fieldRegistry's private normalize(), kept in sync by hand.
+// It's now imported: the learned-answer store keys rows by this exact function's
+// output, so a divergence would orphan saved rows rather than just skew a match.
+const normalize = normalizeText;
 
 function containsPhrase(haystack, phrase) {
   if (!phrase) return false;
@@ -142,22 +134,73 @@ function finalizeDirect(field, cand) {
   };
 }
 
+// Whether a local classification is trustworthy enough to answer a field from
+// identity_memory without the model's second opinion.
+//
+// An EXACT alias hit is trusted for any key (unchanged). A FUZZY hit is now also
+// trusted — but only off the risk cluster (names + government/financial IDs),
+// which keeps the local+AI-agreement requirement that exists there because of a
+// real misclassification incident.
+//
+// This is a pure token saving, not a behavior change: generate.js's mergeAnswer()
+// ALREADY overwrites a fuzzy-matched field's answer with the remembered value at
+// HIGH confidence (see its `fromMemory` branch), and resolveCanonicalKey already
+// trusts a fuzzy match outright off the risk cluster. So these fields were always
+// going to end up with the remembered value — we were paying the model to hand it
+// back to us. "Current Fixed CTC (in Lakhs)" only fuzzy-matches (no exact alias
+// covers every parenthetical a form might add), and it is exactly the field the
+// bug report says must resolve with no API call.
+function canTrustLocally(local) {
+  if (!local || !isValidKey(local.canonicalKey)) return false;
+  return local.confidence === 'high' || !isRiskClusterKey(local.canonicalKey);
+}
+
 // Classify one extracted field. Returns one of:
 //   { route: 'direct'|'rule', canonicalKey, value, source, fromMemory }
 //   { route: 'skip' }
 //   { route: 'generative', localMatch }   // localMatch reused by generate.js
-export function routeField(field, profile, identityMemory) {
+//
+// Tier order is the product contract (docs/Issus.md): user override, then profile,
+// then rules, then — only if all three miss — the model.
+export function routeField(field, profile, identityMemory, learnedAnswers = {}) {
   if (field.fieldType === 'upload') return { route: 'skip' };
 
   const local = classifyLocally(field.questionText);
   let cand = null;
 
-  // 1) Exact identity classification with a stored value -> reuse verbatim.
+  // 0) User override: this exact question has been answered and confirmed before.
+  // Outranks everything, including a canonical classification of the same field —
+  // the user's own words about this specific question beat any inference about it.
+  //
+  // No misclassification risk to guard against here: the row is keyed by the
+  // question's own text, so there is no fuzzy step that could have pointed it at
+  // the wrong key. That's why this tier is safe to trust unconditionally while
+  // tier 1 below still gates on canTrustLocally().
+  // hasOwn, not a bare lookup: a field labelled "Constructor" or "toString" would
+  // otherwise resolve against Object.prototype and route a function as the answer.
+  const learnedKey = normalize(field.questionText);
+  const learned = hasOwn(learnedAnswers, learnedKey) ? learnedAnswers[learnedKey] : null;
+  if (learned) {
+    // A learned row that names a canonical key defers to identity_memory for the
+    // VALUE, so a canonical value keeps exactly one home and editing it in Backup
+    // can't be undone by a stale copy here. The row still earns its keep: it's what
+    // recognized this phrasing for free.
+    const key = isValidKey(learned.canonicalKey) ? learned.canonicalKey : null;
+    const value = key && hasOwn(identityMemory, key) ? identityMemory[key] : learned.answer;
+    cand = { key, value, source: 'memory', fromMemory: true };
+  }
+
+  // 1) Identity classification with a stored value -> reuse verbatim.
   // 2) ...or a value derivable from the freeform profile (name/email/phone).
-  if (local && local.confidence === 'high' && isValidKey(local.canonicalKey)) {
+  if (!cand && canTrustLocally(local)) {
     if (hasOwn(identityMemory, local.canonicalKey)) {
       cand = { key: local.canonicalKey, value: identityMemory[local.canonicalKey], source: 'memory', fromMemory: true };
-    } else {
+    } else if (local.confidence === 'high') {
+      // Profile-derived values stay exact-match-only. mergeAnswer() never injects
+      // from the profile the way it does from identity_memory, so unlike the branch
+      // above, relaxing this one WOULD change answers ("Guardian's Contact Number"
+      // fuzzy-matching `phone` and filling the user's own) rather than just save
+      // tokens. Different trade, so it doesn't ride along on the same relaxation.
       const pv = profileValueForCanonical(local.canonicalKey, profile);
       if (pv) cand = { key: local.canonicalKey, value: pv, source: 'profile', fromMemory: false };
     }

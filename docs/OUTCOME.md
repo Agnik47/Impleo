@@ -1719,3 +1719,154 @@ runtime behaviour and cannot be asserted from a static read-through.
    left untouched; unclear if it's intended source material.
 6. Reduced-motion resolves each scroll-driven beat to its END state (cards filled, answers
    approved) so copy and visuals never contradict; worth an actual pass with the OS setting on.
+
+---
+
+### Memory — Learning loop: persist & reuse user-confirmed answers (docs/Issus.md) — 2026-07-14
+
+**What was built:**
+Closed the loop reported in `Issus.md` (edited answers never reused). Two changes:
+(1) added a **situational cluster** to `fieldRegistry.js` — `current_ctc`, `expected_ctc`,
+`notice_period_days`, `work_mode` — which was the actual bug; (2) added a second memory
+store, `learned_answers` (`learnedMemory.js` + `routes/learned-answers.js`), keyed by the
+question's normalized text, so answers to questions with **no** canonical key can be
+remembered. `ReviewFlow` now writes on Accept/Edit (`Issus.md`'s `saveUserCorrection`);
+`routeField` gained a tier-0 user-override lookup ahead of profile/rule/LLM.
+
+**Verified against:**
+Partial — logic only. A throwaway harness exercised `classifyLocally`/`routeField` directly
+(pure, no DB) across all 19 field phrasings named in `Issus.md`: every one resolves to the
+right canonical key and returns `route: 'direct'|'rule'` with the remembered value — i.e. no
+API call. Also asserted: risk-cluster fuzzy matches still fall through to the model; a learned
+row naming a canonical key defers to `identity_memory` for the value; unregistered questions
+reuse from the learned store; `Object.prototype` keys don't route. All server files pass
+`node --check`. **Not** verified against a real page or a running server/extension — no DB
+migration run, no build, no fill executed. Definition-of-done rules 1 and 2 are unmet;
+handed to the founder to run.
+
+**Acceptance criterion met?** Partial — every success criterion in `Issus.md` is met in logic
+and unverified at runtime.
+
+**Deviations from spec:**
+- **`Issus.md`'s premise was wrong, and the fix is smaller than it asked for.** It calls for a
+  4-tier lookup order and two memory systems as if neither existed. `fieldRouter.js` already
+  implemented that exact order, and `identity_memory` was already the user-override store
+  reused verbatim at HIGH confidence. The loop wasn't broken — the registry is a *closed* set
+  with no CTC/notice-period keys, so `classifyLocally` returned null, the AI was instructed to
+  return `canonicalKey: null`, and `ReviewFlow`'s save filtered on `canonicalKey`. The edit had
+  nowhere to go. No architecture was redesigned; the "redesign the storage architecture if
+  necessary" latitude was not needed.
+- **Identity writes stay on Fill, not Accept.** `Issus.md` asks for save-on-Accept everywhere.
+  Learned answers do that. `identity_memory` writes stay in `handleFill` because that path
+  carries the same-batch collision guard added after a real incident (three fields on one form
+  all misclassifying to `full_name`, each overwriting the last), and that guard needs the whole
+  batch. Moving it is a separate risk; the doc's success criteria pass without it. Flagged to
+  the founder as an open choice.
+- **Essays are deliberately not learned.** `learnedMemory.js` refuses `textarea` and answers
+  over 120 chars. Replaying a hackathon motivation letter verbatim into a different hackathon
+  is worse than paying for a fresh one; prose reuse already goes through `qa_history` as model
+  context. `Issus.md` doesn't distinguish short facts from prose — its examples ("5", "0",
+  "Hybrid") are all short facts.
+- **Plain Accept is learned, not just Edit.** The doc frames capture as `saveUserCorrection`
+  (edits only). Learning only from corrections means a *correct* AI answer accepted ten times
+  still costs ten API calls, which loses on the doc's own stated goal. Both are stored, split
+  by `source` (`user_edit` > `user_accept`), and the upsert's WHERE clause enforces that a
+  rubber-stamped answer can never bury a hand-typed one (rule 4).
+- **`canTrustLocally` relaxation.** Fuzzy matches off the risk cluster now route directly.
+  This changes no answers — `mergeAnswer` already overwrote those fields with the remembered
+  value at HIGH confidence — it just stops paying the model to hand back a value we hold.
+  Needed because "Current Fixed CTC (in Lakhs)" only ever fuzzy-matches, and `Issus.md`
+  requires it to resolve with no API call.
+- CTC/notice period are **not** marked `sensitive`. That flag feeds `RISK_CLUSTER_KEYS` and
+  would force the expensive AI-agreement path; it's scoped to government/financial
+  *identifiers*, where a misclassification is unrecoverable. A salary figure is neither.
+- Export gained `learnedAnswers` **without** a `schemaVersion` bump (still 1). It's additive
+  and optional, so v1 files still import and older builds ignore the key; bumping would make
+  `validateEnvelope`'s strict equality reject files in both directions for no gain.
+
+**Known issues / follow-ups:**
+1. **Nothing has been run.** Founder must restart `server/` (the `learned_answers` table is
+   created on boot by `db.js`'s `CREATE TABLE IF NOT EXISTS` — no migration needed on an
+   existing `impleo.db`), rebuild the extension, and reproduce the `Issus.md` scenario on a
+   real form.
+2. **Pre-existing latent bug found while testing:** the fuzzy matcher uses raw substring
+   matching, so the `pan` alias matches inside "com**pan**y" — `"Company Name"` classifies as
+   `pan_number`/medium. Harmless today (it's risk-cluster, so it falls through to the model),
+   but it makes `ReviewCard` show the "looked like a rememberable identity field" warning on an
+   ordinary Company Name field, and it would fill a PAN if that key were ever un-sensitived.
+   Fix would be word-boundary matching in `classifyLocally`. Untouched — out of scope.
+3. Multi-select (`checkbox`) learned answers round-trip as a joined string, so only one option
+   is restored via `matchOption`. Same limitation `identity_memory` already has; consistent
+   rather than correct. JSON-encoding `answer` would fix it if it ever bites.
+4. `learned_answers` is uncapped, unlike `qa_history` (50). One row per distinct question the
+   user confirms — expected to stay small, but there's no eviction.
+5. The four new registry keys add ~4 lines to `registryPromptList()`, i.e. a small prompt-token
+   cost on every classifying call, against a large saving on the fields they resolve for free.
+6. `AGENTS.md`'s project-structure tree doesn't list `fieldRegistry.js`, `fieldRouter.js`,
+   `promptContext.js`, `tokens.js`, `learnedMemory.js`, or the `identity-memory`/
+   `learned-answers`/`import-export` routes (pre-existing drift, now slightly worse).
+
+---
+
+### Landing — Premium loading screen (chameleon/jungle theme) — 2026-07-14
+
+**What was built:**
+`landing/src/components/loading/` — `LoadingScreen.jsx` (orchestrator),
+`LoadingMascot.jsx`, `LoadingProgress.jsx`, `LoadingCounter.jsx`,
+`LoadingStatus.jsx`, `loading.css`, plus `useAppReadiness.js` (the real-signal
+hook the counter is paced against — fonts.ready, image `decode()`, `window.load`,
+double-rAF paint). Wired into `main.jsx` by wrapping `<App/>` — the only edit
+outside `components/loading/`. Full design rationale, the pacing formula, and
+every reused-vs-new token is written up in `docs/UPDATED_DESIGN_MD.md`'s new
+"Loading Experience" section (that file is this project's `Design.md`; no file
+by that literal name exists).
+
+**Verified against:** `http://localhost:5173` (Vite dev server), driven headlessly
+via `playwright-core` against the machine's installed Chrome (no browser binary
+downloaded — `playwright-core` installed with `--no-save`, removed after, `git
+status` confirms `package.json`/`package-lock.json` are untouched). Three
+screenshots across the loading window (~600ms / ~2000ms / ~4500ms) show: the
+mascot with orbiting form-field/checkmark glyphs at two different orbit
+positions (confirming the orbit animation is actually running, not a static
+image), the counter progressing 0 → 99, the brand-gradient progress bar filling
+with its tick marks, two different rotating status lines, and — in the final
+shot — the loader fully gone with the untouched hero section rendered in its
+normal position (no layout shift, no residual overlay). `page.on('console')`/
+`pageerror` listeners recorded zero errors across the run. `npm run build` also
+succeeds (pre-existing `CanopyScene` >500kB chunk warning only, unrelated to
+this change).
+
+**Acceptance criterion met?** Yes, with the two deviations below.
+
+**Deviations from spec:**
+- **No Framer Motion**, despite the task listing it as an option. GSAP is
+  already this project's entire animation runtime (the story sections
+  themselves dropped Framer Motion for the same bundle-cost reason — see the
+  landing-page OUTCOME entry above this one). Adding a second runtime for one
+  screen's exit fade would be exactly the kind of cost that earlier decision
+  was made to avoid. The loader's only non-CSS-keyframe animation (the exit
+  fade) uses GSAP.
+- **No literal tail-curl animation.** That visual idea requires animating a
+  path inside the shared `Chameleon.jsx`, which the task put explicitly out of
+  bounds ("do not modify any existing... components"). Resolved with a
+  breathing scale + 1° sway on the mascot's wrapper instead — organic
+  weight-shift motion without touching geometry inside a component this task
+  isn't scoped to edit. Written up in Design.md so it doesn't read as a missed
+  requirement later.
+- `hero.png` in `landing/public/` was **not** added to the critical-image
+  preload set: grepped the whole `src/` tree first and it's unreferenced
+  anywhere (dead 1.4MB asset, pre-existing). Preloading it would have made the
+  "images" readiness signal wait on a file the app doesn't actually use.
+
+**Known issues / follow-ups:**
+1. Verified against the **dev server**, not a production build served over
+   HTTP — `npm run build` succeeds and the bundle is a single ~336KB chunk (vs.
+   110 unbundled dev-mode module requests), so real-world readiness timing will
+   look different from the dev-mode screenshots. Worth a spot check against
+   `vite preview` before shipping if the exact timing feel matters.
+2. `MIN_VISIBLE_MS` (3000), `MESSAGE_INTERVAL_MS` (1100), and `CHASE_RATE`
+   (0.09) are hand-picked constants in `LoadingScreen.jsx`, not derived from
+   anything — reasonable starting values, not measured against real users.
+3. No automated test coverage (consistent with this project's "no test suite
+   for v1" stance in `AGENTS.md`, which is scoped to the extension/server but
+   the landing page has never had one either).

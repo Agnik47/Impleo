@@ -4,12 +4,14 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { MAX_ENTRIES } from './qa-history.js';
+import { normalizeText } from '../fieldRegistry.js';
 import {
   CURRENT_SCHEMA_VERSION,
   validateEnvelope,
   validateProfile,
   validateQaHistoryEntries,
   validateIdentityMemory,
+  validateLearnedAnswers,
 } from '../profileSchema.js';
 
 const router = Router();
@@ -28,11 +30,26 @@ router.get('/export', (req, res) => {
   const identityMemoryObj = {};
   for (const r of identityRows) identityMemoryObj[r.canonical_key] = r.value;
 
+  // question_norm is deliberately not exported: it's derived (normalizeText of
+  // question_text), so re-deriving it on import keeps a file written against an
+  // older normalization rule from importing keys the current router would never
+  // look up.
+  const learnedRows = db
+    .prepare('SELECT question_text, answer, canonical_key FROM learned_answers ORDER BY updated_at DESC')
+    .all();
+
   // Run the saved data back through the same validators used on import, so every file
   // Impleo exports is guaranteed importable by Impleo.
   const profile = validateProfile(JSON.parse(row.data));
   const qaHistory = validateQaHistoryEntries(qaRows);
   const identityMemory = validateIdentityMemory(identityMemoryObj);
+  const learnedAnswers = validateLearnedAnswers(
+    learnedRows.map((r) => ({
+      questionText: r.question_text,
+      answer: r.answer,
+      canonicalKey: r.canonical_key,
+    }))
+  );
 
   res.json({
     schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -41,6 +58,7 @@ router.get('/export', (req, res) => {
     profile,
     qaHistory,
     identityMemory,
+    learnedAnswers,
   });
 });
 
@@ -48,8 +66,9 @@ router.post('/import', (req, res) => {
   let profile;
   let qaHistory;
   let identityMemory;
+  let learnedAnswers;
   try {
-    ({ profile, qaHistory, identityMemory } = validateEnvelope(req.body));
+    ({ profile, qaHistory, identityMemory, learnedAnswers } = validateEnvelope(req.body));
   } catch (err) {
     return res.status(400).json({ ok: false, error: err.message });
   }
@@ -63,6 +82,7 @@ router.post('/import', (req, res) => {
         name: profile.personal.name || null,
         qaHistoryCount: qaHistory.length,
         identityMemoryCount: identityKeys.length,
+        learnedAnswerCount: learnedAnswers.length,
       },
     });
   }
@@ -95,12 +115,33 @@ router.post('/import', (req, res) => {
     for (const key of identityKeys) {
       insertIdentity.run(key, identityMemory[key], now, now);
     }
+
+    // Full-replace, same semantics as the three stores above.
+    db.prepare('DELETE FROM learned_answers').run();
+    // OR REPLACE, not a plain INSERT: question_norm is re-derived here, so two rows
+    // whose questions differ only in punctuation/case ("Expected CTC?" and "expected
+    // ctc") collapse onto one primary key. Last one wins — the alternative is the
+    // whole import throwing on a constraint the user can't see or fix.
+    const insertLearned = db.prepare(
+      `INSERT OR REPLACE INTO learned_answers
+         (question_norm, question_text, canonical_key, answer, source, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'import', ?, ?)`
+    );
+    for (const entry of learnedAnswers) {
+      const questionNorm = normalizeText(entry.questionText);
+      if (!questionNorm) continue;
+      insertLearned.run(questionNorm, entry.questionText, entry.canonicalKey, entry.answer, now, now);
+    }
   });
   commit();
 
   res.json({
     ok: true,
-    imported: { qaHistoryCount: qaHistory.length, identityMemoryCount: identityKeys.length },
+    imported: {
+      qaHistoryCount: qaHistory.length,
+      identityMemoryCount: identityKeys.length,
+      learnedAnswerCount: learnedAnswers.length,
+    },
   });
 });
 

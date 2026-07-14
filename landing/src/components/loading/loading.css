@@ -1,0 +1,54 @@
+/*
+ * Loader-only keyframes. Everything else the loader animates (float-slow,
+ * float-slower, glow-pulse, check-pop, reveal-up, and Chameleon's own blink)
+ * is reused verbatim from tailwind.config.js / index.css — these three are
+ * the only genuinely new motion this feature adds.
+ *
+ * `prefers-reduced-motion` is handled by NOT applying these classes at all
+ * (see LoadingMascot.jsx's `reduced` gating), matching how the rest of the
+ * site gates GSAP/scroll motion — the global reduced-motion override in
+ * index.css is a second, redundant safety net, not the primary mechanism.
+ */
+
+@keyframes loader-breathe {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.035) rotate(1deg);
+  }
+}
+.loader-breathe {
+  animation: loader-breathe 3.6s ease-in-out infinite;
+}
+
+@keyframes loader-orbit {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.loader-orbit-ring {
+  animation: loader-orbit 16s linear infinite;
+}
+
+/* Counter-rotates each orbiting glyph at the same period, opposite direction,
+   so it revolves around the mascot without spinning in place — the classic
+   "orbit vs. spin" CSS decomposition. The keyframe also owns the -50%/-50%
+   centering translate: it must fully own `transform` on this element rather
+   than share it with a Tailwind translate utility, since an element can only
+   have one active `transform` source at a time. */
+@keyframes loader-orbit-counter {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(-360deg);
+  }
+}
+.loader-orbit-counter {
+  animation: loader-orbit-counter 16s linear infinite;
+}

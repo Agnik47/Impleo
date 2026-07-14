@@ -109,6 +109,32 @@ export function validateIdentityMemory(memory) {
   return out;
 }
 
+// Learned answers travel as a list of {questionText, answer, canonicalKey}. Lenient
+// like qaHistory: drop malformed rows rather than failing the whole import. A row's
+// canonicalKey is dropped (not the row) when it isn't a registry key, so a file
+// written by a newer Impleo — one that knows a key this build doesn't — still imports
+// its answers, just without the classification.
+export function validateLearnedAnswers(entries) {
+  if (entries === undefined || entries === null) return [];
+  if (!Array.isArray(entries)) {
+    throw new Error('"learnedAnswers" must be a list of entries.');
+  }
+  return entries
+    .filter(isPlainObject)
+    .filter(
+      (e) =>
+        typeof e.questionText === 'string' &&
+        e.questionText.trim() !== '' &&
+        typeof e.answer === 'string' &&
+        e.answer.trim() !== ''
+    )
+    .map((e) => ({
+      questionText: e.questionText,
+      answer: e.answer,
+      canonicalKey: isValidKey(e.canonicalKey) ? e.canonicalKey : null,
+    }));
+}
+
 // Recognized top-level profile fields — used to detect a "bare" profile object (no
 // envelope wrapper) below. Keep in sync with validateProfile's own field list.
 const PROFILE_FIELD_KEYS = [
@@ -142,7 +168,8 @@ export function validateEnvelope(body) {
     const profile = validateProfile(body);
     const qaHistory = validateQaHistoryEntries(body.qaHistory);
     const identityMemory = validateIdentityMemory(body.identityMemory);
-    return { profile, qaHistory, identityMemory };
+    const learnedAnswers = validateLearnedAnswers(body.learnedAnswers);
+    return { profile, qaHistory, identityMemory, learnedAnswers };
   }
 
   if (body.app !== 'impleo') {
@@ -161,5 +188,6 @@ export function validateEnvelope(body) {
   const profile = validateProfile(body.profile);
   const qaHistory = validateQaHistoryEntries(body.qaHistory);
   const identityMemory = validateIdentityMemory(body.identityMemory);
-  return { profile, qaHistory, identityMemory };
+  const learnedAnswers = validateLearnedAnswers(body.learnedAnswers);
+  return { profile, qaHistory, identityMemory, learnedAnswers };
 }

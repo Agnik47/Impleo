@@ -30,6 +30,22 @@ async function getActiveTab() {
   return tab;
 }
 
+function answerToText(answer) {
+  return Array.isArray(answer) ? answer.join(', ') : String(answer ?? '');
+}
+
+// Mirrors the server's isLearnable (server/src/learnedMemory.js) so that accepting
+// an essay doesn't fire a round-trip the server would only reject. The server owns
+// the real policy and re-checks every write — this is an optimization, not the rule.
+const LEARNABLE_FIELD_TYPES = new Set(['text', 'radio', 'checkbox_single', 'dropdown', 'checkbox']);
+const MAX_LEARNABLE_ANSWER_LENGTH = 120;
+
+function isLearnable(question, answer) {
+  if (!question || !LEARNABLE_FIELD_TYPES.has(question.fieldType)) return false;
+  const text = answerToText(answer).trim();
+  return text.length > 0 && text.length <= MAX_LEARNABLE_ANSWER_LENGTH;
+}
+
 export default function ReviewFlow() {
   const [phase, setPhase] = useState('idle'); // idle | extracting | generating | reviewing | filling | error
   const [errorMessage, setErrorMessage] = useState(null);
@@ -115,13 +131,64 @@ export default function ReviewFlow() {
     setReviewState((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   }, []);
 
+  // Lets the stable callbacks below read current formSchema/reviewState without
+  // closing over them — which would rebuild the callbacks on every keystroke and
+  // defeat ReviewCard's memoization (see the note on handleAccept).
+  const formSchemaRef = useRef(formSchema);
+  const reviewStateRef = useRef(reviewState);
+  useEffect(() => {
+    formSchemaRef.current = formSchema;
+  }, [formSchema]);
+  useEffect(() => {
+    reviewStateRef.current = reviewState;
+  }, [reviewState]);
+
+  // The learning loop's capture half (docs/Issus.md's saveUserCorrection): a
+  // confirmed answer is recorded the moment it's confirmed, so the same question
+  // resolves from memory — for free, at HIGH confidence — on every later form.
+  //
+  // Fire-and-forget on purpose. Learning is a side benefit of clicking Accept, not
+  // the point of it, so a failed write must never block the click or stall the
+  // review; it only surfaces as text (AGENTS.md: never console.error and silence).
+  const learnAnswer = useCallback(async (id, answer, source) => {
+    const question = formSchemaRef.current.find((q) => q.id === id);
+    if (!isLearnable(question, answer)) return;
+    try {
+      await api.saveLearnedAnswer({
+        questionText: question.questionText,
+        answer: answerToText(answer),
+        // The classification, when there is one, so the router can defer to
+        // identity_memory for the value instead of keeping a second copy here.
+        canonicalKey: reviewStateRef.current[id]?.canonicalKey ?? null,
+        fieldType: question.fieldType,
+        source,
+      });
+    } catch (err) {
+      setErrorMessage(`Couldn't remember the answer to "${question.questionText}": ${err.message}`);
+    }
+  }, []);
+
   // Kept as stable per-id-taking callbacks (rather than inline arrows built
   // per card on every ReviewFlow render) so React.memo on ReviewCard can
   // actually skip re-rendering cards whose own props didn't change.
-  const handleAccept = useCallback((id) => updateReview(id, { status: 'accepted' }), [updateReview]);
+  //
+  // Accept and Edit are BOTH terminal confirmations here (each marks a field
+  // approved for fill), so both teach — but they're recorded under different
+  // sources: a hand-typed answer outranks a rubber-stamped AI one, and only the
+  // former is protected from being overwritten later (see learnedMemory.js).
+  const handleAccept = useCallback(
+    (id) => {
+      updateReview(id, { status: 'accepted' });
+      learnAnswer(id, reviewStateRef.current[id]?.answer, 'user_accept');
+    },
+    [updateReview, learnAnswer]
+  );
   const handleEditAnswer = useCallback(
-    (id, value) => updateReview(id, { status: 'edited', answer: value }),
-    [updateReview]
+    (id, value) => {
+      updateReview(id, { status: 'edited', answer: value });
+      learnAnswer(id, value, 'user_edit');
+    },
+    [updateReview, learnAnswer]
   );
   const handleSkip = useCallback((id) => updateReview(id, { status: 'skipped' }), [updateReview]);
   const handleToggleRemember = useCallback(
@@ -162,8 +229,16 @@ export default function ReviewFlow() {
           existingMemoryValue: generated?.existingMemoryValue ?? null,
           fromMemory,
           // Default the "remember" toggle on for a newly-classified value the user is
-          // supplying (not one that already came from memory), so capture is one click.
-          remember: Boolean(canonicalKey) && !fromMemory,
+          // supplying, so capture is one click.
+          //
+          // Gated on existingMemoryValue rather than !fromMemory because "remember"
+          // means precisely "write this to identity_memory", and those two differ in
+          // one case that matters: an answer replayed from the learned store reports
+          // fromMemory, but its canonical key may still be absent from identity_memory
+          // (accepted on an earlier form that was never filled). Keying off fromMemory
+          // there would leave the value stranded under one exact phrasing forever,
+          // never promoted to the canonical key that lets other wordings find it.
+          remember: Boolean(canonicalKey) && generated?.existingMemoryValue == null,
           status: q.fieldType === 'upload' ? 'unactionable' : 'pending',
           regenerating: false,
         };
@@ -229,7 +304,8 @@ export default function ReviewFlow() {
           classificationSource: answer.classificationSource ?? null,
           existingMemoryValue: answer.existingMemoryValue ?? null,
           fromMemory,
-          remember: Boolean(canonicalKey) && !fromMemory,
+          // Same reasoning as generateAnswers above.
+          remember: Boolean(canonicalKey) && answer.existingMemoryValue == null,
           regenerating: false,
         });
       } catch (err) {
@@ -333,16 +409,30 @@ export default function ReviewFlow() {
   }
 
   function handleAcceptAll() {
+    // Resolved up front rather than inside the updater: learning is a side effect,
+    // and a state updater must stay pure (React may invoke it twice).
+    const accepted = formSchema.filter((q) => {
+      const r = reviewState[q.id];
+      return r && r.status === 'pending' && (r.confidence === 'high' || r.confidence === 'medium');
+    });
+
     setReviewState((prev) => {
       const next = { ...prev };
-      for (const q of formSchema) {
+      for (const q of accepted) {
         const r = next[q.id];
-        if (r && r.status === 'pending' && (r.confidence === 'high' || r.confidence === 'medium')) {
-          next[q.id] = { ...r, status: 'accepted' };
-        }
+        if (r) next[q.id] = { ...r, status: 'accepted' };
       }
       return next;
     });
+
+    // Bulk accept teaches too — it's the same confirmation as clicking Accept on
+    // each card, and skipping it here would mean the fastest path through a review
+    // is also the only one Impleo learns nothing from. Low-confidence answers are
+    // excluded by the filter above, and essays by isLearnable, so what this can
+    // absorb in bulk is short answers Impleo was already confident about.
+    for (const q of accepted) {
+      learnAnswer(q.id, reviewState[q.id].answer, 'user_accept');
+    }
   }
 
   const approvedCount = useMemo(

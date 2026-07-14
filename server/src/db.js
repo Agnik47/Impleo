@@ -50,6 +50,31 @@ db.exec(`
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+
+  -- Learned answers: the long tail identity_memory structurally cannot hold. Where
+  -- identity_memory is keyed by a canonical key from a CLOSED registry, this is keyed
+  -- by the question's own normalized text, so it can remember an answer to a question
+  -- nobody anticipated ("How many hackathons have you attended?") without that question
+  -- needing a registry entry first.
+  --
+  -- The two stores are complementary, not redundant, and never disagree: when a row
+  -- here carries a canonical_key that identity_memory also holds, the reader
+  -- (fieldRouter) takes the VALUE from identity_memory and uses this row only to
+  -- recognize the phrasing. So a canonical value has exactly one home, and updating it
+  -- in the Backup UI can't leave a stale copy behind here.
+  --
+  -- source: 'user_edit' (typed by hand) > 'user_accept' (confirmed AI text) > 'import'.
+  -- The upsert in learnedMemory.js enforces that ordering so a bulk "Accept high/mid"
+  -- can never quietly bury a value the user actually typed.
+  CREATE TABLE IF NOT EXISTS learned_answers (
+    question_norm TEXT PRIMARY KEY,
+    question_text TEXT NOT NULL,
+    canonical_key TEXT,
+    answer TEXT NOT NULL,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 `);
 
 // Migrate installs created before multi-provider support: the settings table

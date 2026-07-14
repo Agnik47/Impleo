@@ -8,6 +8,7 @@ import {
   registryPromptList,
 } from '../fieldRegistry.js';
 import { routeField, buildResolvedAnswer } from '../fieldRouter.js';
+import { getLearnedAnswers } from '../learnedMemory.js';
 import { selectContext } from '../promptContext.js';
 import { estimateTokens, computeMaxTokens, logTokenMetrics } from '../tokens.js';
 
@@ -207,9 +208,10 @@ router.post('/generate-answers', async (req, res) => {
   const { active, profile } = ready;
 
   const identityMemory = getIdentityMemory();
+  const learnedAnswers = getLearnedAnswers();
 
   // --- Deterministic routing pass: answer everything we can for free. ---
-  const routes = formSchema.map((q) => routeField(q, profile, identityMemory));
+  const routes = formSchema.map((q) => routeField(q, profile, identityMemory, learnedAnswers));
   const resolvedById = new Map();
   const generative = []; // { q, localMatch }
   let directCount = 0;
@@ -318,6 +320,11 @@ router.post('/regenerate-answer', async (req, res) => {
   // Regenerate is user-initiated ("give me another answer", possibly with an
   // instruction), so it always goes to the model — but with the same
   // relevance-selected context and adaptive (single-field) token budget.
+  //
+  // Learned answers are deliberately NOT passed here: the user is looking at a
+  // remembered answer and asking for a different one, so replaying it from memory
+  // would ignore the request. routeField is called only to recover the localMatch
+  // hint; the model runs either way.
   const routed = routeField(question, profile, identityMemory);
   const localMatch = routed.route === 'generative' ? routed.localMatch : null;
   const generativeFields = [question];
