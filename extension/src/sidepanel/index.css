@@ -34,3 +34,68 @@
     @apply rounded-full bg-surface-border;
   }
 }
+
+@layer components {
+  /* The one brand gradient (green -> lime -> yellow), reused verbatim from
+     the landing page's identical `.chameleon-text`/`.chameleon-line` classes
+     in landing/src/index.css — same hex stops, so the two apps' one allowed
+     gradient is pixel-identical, not just similarly-named. */
+  .chameleon-text {
+    background-image: linear-gradient(90deg, #28c94e 0%, #a6d91a 55%, #f5d000 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .chameleon-line {
+    background-image: linear-gradient(90deg, #28c94e 0%, #a6d91a 55%, #f5d000 100%);
+  }
+
+  /* Deep-jungle radial vignette, same recipe as landing's `.jungle-radial` —
+     the ambient backdrop BackgroundEffects paints behind the whole panel. */
+  .jungle-radial {
+    background:
+      radial-gradient(120% 80% at 50% -10%, rgba(166, 217, 26, 0.08), transparent 60%),
+      radial-gradient(90% 70% at 80% 110%, rgba(0, 160, 80, 0.1), transparent 55%);
+  }
+
+  /* Glass surface: the "premium SaaS panel" treatment (HeroCard, ExtractButton,
+     CompletionState) — translucent card + blur + brand-tinted hairline border,
+     the literal recipe the brief describes (border = brand/12%), just anchored
+     to the real brand hex rather than the brief's approximate one. Kept as a
+     class (not inlined per-component) so every glass surface in the panel
+     shares one definition instead of five near-duplicate class strings. */
+  .glass-surface {
+    background: rgba(23, 28, 26, 0.72);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(40, 201, 78, 0.14);
+  }
+
+  /* Subtle film-grain noise, inlined as an SVG data URI feTurbulence filter —
+     zero network request, zero JS, and (unlike a particle system) entirely
+     static, so it costs nothing per frame. Painted at very low opacity as a
+     texture layer, not a visible pattern. */
+  .noise-texture {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.05;
+  }
+}
+
+/*
+ * Reduced motion: kill CSS keyframe/transition motion globally, same
+ * technique landing/src/index.css already uses. `motion` (the JS library)
+ * and the extension-ui components are ALSO gated in JS via
+ * MotionSystem/useReducedMotion.js, so decorative motion (particles, orbit,
+ * ripple, mascot breathing) is skipped at the source, not just neutralized
+ * after the fact — this CSS rule is the safety net for anything that isn't.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

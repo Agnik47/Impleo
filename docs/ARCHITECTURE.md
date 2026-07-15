@@ -20,17 +20,17 @@ independent of this pivot.
 ## System diagram (textual)
 
 ```
-┌──────────────────────────┐
-│  Side Panel (React + Tailwind)│  extension/src/sidepanel/*
-│  - onboarding form              │
+┌──────────────────────────────────┐
+│  Side Panel (React + Tailwind)   │  extension/src/sidepanel/*
+│  - onboarding form               │
 │  - review cards                  │
 └─────────┬─────────────────┬──────┘
           │                 │ fetch('http://localhost:<port>/api/...')
           │ chrome.scripting│
           │ .executeScript  ▼
-          │        ┌──────────────────────────┐
-          │        │  server/ (local Express)   │  - owns Anthropic API key (SQLite,
-          │        │  + SQLite DB                 │    entered once via onboarding)
+          │        ┌───────────────────────────────┐
+          │        │  server/ (local Express)      │  - owns Anthropic API key (SQLite,
+          │        │  + SQLite DB                  │    entered once via onboarding)
           │        │                               │  - owns profile + qaHistory persistence
           │        │                               │  - single structured-output call to Claude
           │        └─────────┬─────────────────────┘

@@ -1870,3 +1870,157 @@ this change).
 3. No automated test coverage (consistent with this project's "no test suite
    for v1" stance in `AGENTS.md`, which is scoped to the extension/server but
    the landing page has never had one either).
+
+---
+
+### Extension — Jungle-AI-copilot visual redesign of the side panel — 2026-07-14
+
+**What was built:**
+`extension/src/sidepanel/components/extension-ui/` — `MotionSystem` (ported
+`Chameleon.jsx` mascot, `motion.js` spring/stagger/reveal-mask primitives,
+`useMagnetic`, `useReducedMotion`), `BackgroundEffects` (CSS-only ambient
+gradient/particles/noise/light-ray), `HeroCard`, `WaitingState`,
+`ExtractButton` (glass CTA with idle/extracting/generating/error states),
+`ReviewAnimations/StaggerList.jsx`, `CompletionState`. Extended
+`extension/tailwind.config.js` (confidence-glow shadows, ~12 new keyframes)
+and `index.css` (`.glass-surface`, `.chameleon-text`/`.chameleon-line`,
+`.jungle-radial`, `.noise-texture`, a `prefers-reduced-motion` override the
+extension didn't have before). Added `motion` (npm) as the extension's first
+animation library. Visual-only edits to `ReviewFlow.jsx` (swapped inline
+`WelcomeHero`/`StatusLine`/raw button for the new components; every
+handler/state binding preserved exactly, one new derived `useMemo`
+(`allFilledSuccessfully`) reading existing `fillReport` data), `ReviewCard.jsx`
+(className-only: glass surface, confidence-glow layer, no prop/handler
+changes), and `App.jsx` (mounted `BackgroundEffects`, glass-treated the
+header/error states). Full rationale, the color-system decision, motion
+rules, and component map are in `docs/UPDATED_DESIGN_MD.md`'s new "Extension
+Motion & Visual Principles" section (this project's `Design.md`).
+
+**Verified against:** a temporary preview harness (`preview.html` +
+`preview-main.jsx`, created inside `src/sidepanel/` so Vite's dev server and
+Tailwind's content-glob could serve/scan it, deleted immediately after) that
+mounted the new components directly with mock data — bypassing `App.jsx`'s
+real `chrome.*`/localhost:3001 dependencies, which don't exist outside a
+loaded extension. Driven headlessly via `playwright-core` (installed
+`--no-save`, removed after) against the machine's installed Chrome.
+Screenshots confirm: HeroCard's breathing/glowing mascot with badges,
+WaitingState's four-step pipeline, all four ExtractButton phases (idle glass
+CTA, extracting/generating shimmer+pulse, error retry state), three
+ReviewCards showing distinct high/medium/low confidence glows stacked via
+StaggerContainer, and CompletionState's celebrating mascot + checkmark. Zero
+console errors (one favicon 404 from the harness page itself, unrelated to
+any component). `npm run build` succeeds both before and after cleanup
+(346KB JS / 109KB gzip, `motion` included) — confirmed the verification
+scaffolding left no trace in `git status`.
+
+**Acceptance criterion met?** Yes, with the deviations below.
+
+**Deviations from spec:**
+- **Color values, not the color direction.** The brief's hex list
+  (`#39E75F`/`#020805`/etc.) doesn't match the landing page's actual tokens
+  (`#28C94E`/`#0B0F0E`/etc., verified directly from both apps'
+  `tailwind.config.js`, which were already identical before this pass). Since
+  the brief's own repeated goal was "match the landing page exactly" /
+  "feel like the side-panel companion, not a separate product," the literal
+  hex values were treated as an approximate description of a *direction*
+  (neon glow, translucent glass borders) rather than values to introduce —
+  implementing them as given would have made the two apps' palettes diverge,
+  directly contradicting the stated goal. The recipe was kept (border =
+  primary/12%, glow = primary/25%) with the real brand hex as the input.
+  Flagged to the founder before writing any code; proceeding was the
+  reasonable default per the standing Auto Mode guidance, not a silent
+  override — full reasoning in `UPDATED_DESIGN_MD.md`.
+- **No literal chameleon wink** (CompletionState uses the mascot's existing
+  `celebrating` pose instead) — same "don't add new geometry to the shared,
+  faithfully-ported mascot" reasoning as the loading screen's tail-curl
+  substitution from the prior session.
+- **No separate extraction-success flash on ExtractButton.** Doing that
+  safely would mean delaying the button's unmount past a `phase` transition
+  it doesn't own, which is real risk to `ReviewFlow.jsx`'s state machine for
+  a small payoff. The review-card stagger entrance + `CompletionState` after
+  the fill together already deliver "something happened" without touching
+  phase-transition timing.
+- **Onboarding/Settings screens were not deep-restyled** — got
+  `BackgroundEffects` for continuity only. The brief's six sections are all
+  specific to the extract/review flow; a full onboarding-forms pass is a
+  separate scope.
+- `hero.png`-style dead-asset check doesn't apply here, but worth noting:
+  `HeroExtentionImg.png` (the old static mascot PNG) is now unreferenced by
+  any component — left in `extension/icons/` untouched rather than deleted,
+  since removing shipped assets wasn't asked for and `manifest.json`/
+  `vite-plugin-static-copy` still reference it structurally.
+
+**Known issues / follow-ups:**
+1. Verified via a mock-data harness, not the real loaded extension — the
+   founder should `npm run build`, load `extension/dist` unpacked in
+   `chrome://extensions`, and run through idle → extract → review → fill
+   against a real form with `server/` running, per `AGENTS.md`'s definition
+   of done (rules 1-2 specifically require this; a static-mock harness
+   satisfies "did the code render" but not "does it work against a real
+   page").
+2. `ExtractButton`'s magnetic pointer-follow and `StaggerList`'s entrance
+   were only checked visually, not measured for actual frame rate — the "60fps
+   on average laptops" target is a design intent honored by construction
+   (compositor-only transforms, no continuous JS animation loop) rather than
+   something profiled.
+3. `HeroExtentionImg.png` (1MB+) is now dead weight in the shipped bundle
+   (copied by `vite-plugin-static-copy` but never referenced) — worth a
+   follow-up to remove it from `manifest.json`'s copy targets if confirmed
+   unused elsewhere.
+
+---
+
+### [Docs] — Public README.md + LICENSE — 2026-07-15
+
+**What was built:**
+Root `README.md` rewritten from scratch as a production-grade, public-facing
+GitHub README (hero banner, problem/solution, product demo screenshots,
+features grid, comparison table, Mermaid architecture diagram, privacy
+section, install/config instructions, repo structure, roadmap, contributing,
+license, footer). Root `LICENSE` added (MIT, copyright Agnik Paul, 2026) — did
+not previously exist despite the founder's brief asking for a "professional
+MIT section."
+
+**Verified against:**
+N/A — no real-page verification applicable (documentation only, no product
+code touched). Content was cross-checked against `docs/PRD.md`,
+`docs/ARCHITECTURE.md`, `docs/STRUCTURE.md`, `server/src/providers.js` (the
+actual 4-provider list: Anthropic/Gemini/OpenAI/Groq), `server/src/routes/
+identity-memory.js` and `import-export.js` (identity memory + learned
+answers + export/import features), and `extension/manifest.json`, so every
+claim in the README matches what's actually implemented rather than the
+founder's aspirational brief.
+
+**Acceptance criterion met?** Yes.
+
+**Deviations from spec:**
+- The founder's brief asked to embed all six images in `/IMages`. Two —
+  `Profile Setup.png` and `Auto From Fillup.png` — contain the founder's real
+  email, phone number, and a LinkedIn URL with their real name as visible
+  demo data. Flagged this to the founder before embedding; they chose to
+  **omit both** from the public README rather than publish that data. Only
+  `Banner.png`, `Extention.png`, `LandingPAge.png`, and `Regenerate Field.png`
+  are embedded.
+- No architecture image existed in `/IMages`, so the Architecture section
+  uses a Mermaid diagram (GitHub renders these natively in README.md) instead
+  of an embedded screenshot.
+- Repository Structure section reflects the actual current tree (which now
+  includes `landing/` and a `test/` scratch dir not in `STRUCTURE.md`'s
+  original spec) rather than reproducing `STRUCTURE.md` verbatim — `test/`
+  was intentionally left out of the documented tree since it's Python
+  provider-testing scratch work with a `.env` file, not part of the shipped
+  product surface.
+
+**Known issues / follow-ups:**
+1. The two PII-containing screenshots still exist in `/IMages` and are
+   untracked in git — they're just not referenced from the README. If this
+   repo is public, the founder should decide whether to delete/redact them
+   before ever `git add`-ing that folder.
+2. Badges (stars, version) will render correctly once pushed to
+   `github.com/Agnik47/Impleo`, but weren't checked live against the actual
+   GitHub-rendered page — no way to verify shields.io/GitHub badge rendering
+   without pushing.
+3. This entry deviates from this file's own "entries go below, oldest first,
+   as each task in TASKS.md completes" convention — there was no
+   corresponding `TASKS.md` entry for this doc-only work, since `TASKS.md` is
+   scoped to the phased product build, not README maintenance.

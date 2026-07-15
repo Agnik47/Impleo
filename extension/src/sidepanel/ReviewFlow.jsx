@@ -5,6 +5,11 @@ import { extractGoogleForm, fillGoogleForm } from '../../content-scripts/google-
 import { extractLumaForm, fillLumaForm } from '../../content-scripts/luma.js';
 import { extractGenericForm } from '../../content-scripts/generic-extractor.js';
 import { fillGenericForm } from '../../content-scripts/generic-filler.js';
+import HeroCard from './components/extension-ui/HeroCard/HeroCard.jsx';
+import WaitingState from './components/extension-ui/WaitingState/WaitingState.jsx';
+import ExtractButton from './components/extension-ui/ExtractButton/ExtractButton.jsx';
+import CompletionState from './components/extension-ui/CompletionState/CompletionState.jsx';
+import { StaggerContainer, StaggerItem } from './components/extension-ui/ReviewAnimations/StaggerList.jsx';
 
 function pickPlatform(hostname) {
   if (hostname.includes('docs.google.com')) return 'google-forms';
@@ -450,32 +455,35 @@ export default function ReviewFlow() {
       ).length,
     [reviewState]
   );
+  // Purely a read of data handleFill already produces — not a new state path.
+  // Gates CompletionState: a celebration only when nothing in the fill
+  // actually failed, not on "a fill was attempted."
+  const allFilledSuccessfully = useMemo(
+    () => Boolean(fillReport && fillReport.length > 0 && fillReport.every((r) => r.status === 'filled')),
+    [fillReport]
+  );
 
   return (
-    <div className="mx-auto w-full min-w-0 max-w-[500px] space-y-3 p-3 sm:p-4">
-      {phase === 'idle' && <WelcomeHero />}
-
-      {(phase === 'idle' || phase === 'error') && (
-        <button
-          onClick={handleExtract}
-          className="w-full rounded-btn bg-brand px-3 py-2 text-body font-medium text-jungle shadow-soft-sm transition-colors duration-150 hover:bg-brand-hover"
-        >
-          {phase === 'error' ? 'Try again' : 'Extract form from this page'}
-        </button>
+    <div className="relative mx-auto w-full min-w-0 max-w-[500px] space-y-3 p-3 sm:p-4">
+      {(phase === 'idle' || phase === 'extracting' || phase === 'generating' || phase === 'error') && (
+        <>
+          <HeroCard />
+          <WaitingState />
+          <ExtractButton phase={phase} onClick={handleExtract} />
+        </>
       )}
 
-      {phase === 'extracting' && <StatusLine label="Extracting…" />}
-      {phase === 'generating' && <StatusLine label="Generating answers…" />}
-
       {errorMessage && (
-        <div className="rounded-card border border-red-900/50 bg-red-950/30 p-2.5 text-body text-red-300 break-words">
+        <div className="rounded-card border border-red-500/25 bg-red-950/30 p-2.5 text-body text-red-300 backdrop-blur-md break-words">
           {errorMessage}
         </div>
       )}
 
       {(phase === 'reviewing' || phase === 'filling') && (
         <>
-          <div className="min-w-0 space-y-2 rounded-card border border-surface-border bg-surface-card p-3 shadow-soft-sm">
+          {allFilledSuccessfully && <CompletionState />}
+
+          <div className="glass-surface min-w-0 space-y-2 rounded-card p-3 shadow-soft-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="min-w-0 text-body text-ink-secondary">
                 <span className="font-medium text-ink-primary">{approvedCount}</span> of {actionableCount} approved
@@ -498,53 +506,31 @@ export default function ReviewFlow() {
               <button
                 onClick={handleFill}
                 disabled={approvedCount === 0 || phase === 'filling'}
-                className="min-w-[9rem] flex-1 rounded-btn bg-brand px-2.5 py-1.5 text-caption font-medium text-jungle transition-colors duration-150 hover:bg-brand-hover disabled:opacity-40"
+                className="min-w-[9rem] flex-1 rounded-btn bg-brand px-2.5 py-1.5 text-caption font-medium text-jungle transition-colors duration-150 hover:bg-brand-hover hover:shadow-glow disabled:opacity-40 disabled:shadow-none"
               >
                 {phase === 'filling' ? 'Filling…' : 'Fill approved'}
               </button>
             </div>
           </div>
 
-          <div className="space-y-2">
+          <StaggerContainer className="space-y-2">
             {formSchema.map((q) => (
-              <ReviewCard
-                key={q.id}
-                question={q}
-                review={reviewState[q.id]}
-                fillResult={fillReport?.find((r) => r.id === q.id)}
-                onAccept={handleAccept}
-                onEdit={handleEditAnswer}
-                onSkip={handleSkip}
-                onRegenerate={handleRegenerate}
-                onToggleRemember={handleToggleRemember}
-              />
+              <StaggerItem key={q.id}>
+                <ReviewCard
+                  question={q}
+                  review={reviewState[q.id]}
+                  fillResult={fillReport?.find((r) => r.id === q.id)}
+                  onAccept={handleAccept}
+                  onEdit={handleEditAnswer}
+                  onSkip={handleSkip}
+                  onRegenerate={handleRegenerate}
+                  onToggleRemember={handleToggleRemember}
+                />
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerContainer>
         </>
       )}
-    </div>
-  );
-}
-
-function StatusLine({ label }) {
-  return (
-    <div className="flex items-center gap-2 text-body text-ink-secondary">
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />
-      {label}
-    </div>
-  );
-}
-
-function WelcomeHero() {
-  return (
-    <div className="flex flex-col items-center gap-2 rounded-card border border-surface-border bg-surface-card p-4 text-center shadow-soft-sm">
-      <img src="./icons/HeroExtentionImg.png" alt="Impleo mascot chameleon" className="h-20 w-20 shrink-0" />
-      <h2 className="text-title text-ink-primary">Hey, I'm Impleo 🦎</h2>
-      <p className="text-card text-ink-secondary">Your tiny AI assistant for boring forms.</p>
-      <p className="text-body text-ink-secondary">
-        I'll find forms on this page, suggest answers from your saved profile, and only fill what you approve.
-      </p>
-      <p className="text-caption italic text-ink-muted">Humans shouldn't type the same thing twice.</p>
     </div>
   );
 }

@@ -6,6 +6,17 @@ const confidenceStyles = {
   low: 'bg-red-500/15 text-red-400',
 };
 
+// Ambient card glow, keyed off the SAME three confidence tiers as the badge
+// above — a card's trust level now reads before you've even looked at the
+// badge text. Literal Tailwind class strings (not built dynamically): the
+// JIT scanner needs the full names present in source, see the shadow-glow-*
+// tokens in tailwind.config.js.
+const confidenceGlow = {
+  high: 'shadow-glow-high',
+  medium: 'shadow-glow-medium',
+  low: 'shadow-glow-low',
+};
+
 const statusStyles = {
   accepted: 'border-brand/50',
   edited: 'border-lime/50',
@@ -79,10 +90,23 @@ function ReviewCard({ question, review, fillResult, onAccept, onEdit, onSkip, on
   const answerText = Array.isArray(review?.answer) ? review.answer.join(', ') : review?.answer || '';
   const isLongAnswer = answerText.length > ANSWER_CLAMP_THRESHOLD;
 
+  // The confidence glow lives on its own layer behind the card, not on the
+  // card's own box-shadow: `glow-pulse` animates opacity, and animating the
+  // opacity of an element that also holds the card's text would fade the
+  // content along with the glow. Pulsing is scoped to `pending` — once a
+  // card is accepted/edited/skipped it's a settled decision, not something
+  // still asking for attention.
+  const glow = confidenceGlow[review?.confidence];
+  const pulsing = glow && review?.status === 'pending';
+
   return (
-    <div
-      className={`min-w-0 max-w-full space-y-2 rounded-card border bg-surface-card p-3 shadow-soft-sm transition-colors duration-150 ${statusStyles[review?.status] || statusStyles.pending}`}
-    >
+    <div className="relative">
+      {glow && (
+        <span aria-hidden="true" className={`absolute inset-0 rounded-card ${glow} ${pulsing ? 'animate-glow-pulse' : ''}`} />
+      )}
+      <div
+        className={`glass-surface relative min-w-0 max-w-full space-y-2.5 rounded-card border p-3.5 transition-colors duration-150 ${statusStyles[review?.status] || statusStyles.pending}`}
+      >
       <div className="flex min-w-0 items-start justify-between gap-2">
         <div className="min-w-0">
           {/* When the field was semantically classified, lead with the human label
@@ -246,6 +270,7 @@ function ReviewCard({ question, review, fillResult, onAccept, onEdit, onSkip, on
       )}
 
       <p className="text-caption capitalize text-ink-muted">{review?.status}</p>
+      </div>
     </div>
   );
 }
