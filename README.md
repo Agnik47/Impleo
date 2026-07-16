@@ -337,21 +337,6 @@ To get started: fork the repo, follow [Installation](#-installation), and open a
 
 <br />
 
-## License
-
-Impleo is released under the [MIT License](LICENSE).
-
-```
-MIT License — Copyright (c) 2026 Agnik Paul
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files, to deal in the Software
-without restriction, subject to the inclusion of the above copyright notice.
-```
-
-See the [LICENSE](LICENSE) file for the full text.
-
-<br />
-
 ---
 
 ## Where Impleo is growing
@@ -400,6 +385,22 @@ A jungle grows faster with more hands in it. Cheapest effort first — you don't
 > **3.** Keep it scoped — a small, reviewable diff with a clear rationale beats a large speculative one.
 
 <br />
+
+## License
+
+Impleo is released under the [MIT License](LICENSE).
+
+```
+MIT License — Copyright (c) 2026 Agnik Paul
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files, to deal in the Software
+without restriction, subject to the inclusion of the above copyright notice.
+```
+
+See the [LICENSE](LICENSE) file for the full text.
+
+<br />
+
 
 <div align="center">
 
