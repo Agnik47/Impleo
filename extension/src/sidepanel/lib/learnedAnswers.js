@@ -139,3 +139,31 @@ export async function deleteLearnedAnswer(questionNorm) {
   await writeKey(STORAGE_KEYS.LEARNED_ANSWERS, all);
   return { ok: true };
 }
+
+// Full replacement, used only by import (lib/importExport.js) — replaces the
+// server's DELETE + INSERT OR REPLACE transaction. Deliberately BYPASSES the
+// user_edit precedence guard that saveLearnedAnswer()/upsertLearnedAnswer()
+// enforce above: import is a full-table replace, not an individual upsert —
+// there's no existing row to protect against, since the whole store is being
+// overwritten, exactly matching the original SQL's DELETE-then-bulk-insert
+// semantics. question_norm is re-derived (never trusted from the import
+// file) so two entries whose questions differ only in punctuation/case
+// collapse onto one key — last one in the array wins, mirroring
+// INSERT OR REPLACE.
+export async function replaceLearnedAnswers(entries) {
+  const now = new Date().toISOString();
+  const next = {};
+  for (const entry of entries) {
+    const questionNorm = normalizeText(entry.questionText);
+    if (!questionNorm) continue;
+    next[questionNorm] = {
+      questionText: entry.questionText,
+      canonicalKey: entry.canonicalKey ?? null,
+      answer: entry.answer,
+      source: 'import',
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+  await writeKey(STORAGE_KEYS.LEARNED_ANSWERS, next);
+}

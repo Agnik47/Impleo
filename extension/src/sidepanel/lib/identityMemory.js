@@ -65,3 +65,17 @@ export async function deleteIdentityMemoryEntry(canonicalKey) {
   await writeKey(STORAGE_KEYS.IDENTITY_MEMORY, all);
   return { ok: true };
 }
+
+// Full replacement, used only by import (lib/importExport.js) — replaces the
+// server's DELETE + bulk-insert transaction. Every entry gets source='import'
+// and a fresh createdAt/updatedAt, matching the original SQL exactly (the
+// table was always wiped first, so there was never a prior createdAt to
+// preserve for an imported row).
+export async function replaceIdentityMemory(map) {
+  const now = new Date().toISOString();
+  const next = {};
+  for (const [key, value] of Object.entries(map)) {
+    next[key] = { value, source: 'import', createdAt: now, updatedAt: now };
+  }
+  await writeKey(STORAGE_KEYS.IDENTITY_MEMORY, next);
+}

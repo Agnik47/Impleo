@@ -33,3 +33,13 @@ export async function appendQaHistory({ question, answer, context, date }) {
   await writeKey(STORAGE_KEYS.QA_HISTORY, trimmed);
   return { ok: true };
 }
+
+// Full replacement of the list, used only by import (lib/importExport.js) —
+// replaces the server's DELETE + bulk-insert-oldest-first transaction.
+// `entries` must already be newest-first (the same order getQaHistory() and
+// the export envelope both use), so this reverses once to restore the
+// oldest-first order this module stores internally.
+export async function replaceQaHistory(entries) {
+  const oldestFirst = [...entries].reverse().slice(-MAX_ENTRIES);
+  await writeKey(STORAGE_KEYS.QA_HISTORY, oldestFirst);
+}
