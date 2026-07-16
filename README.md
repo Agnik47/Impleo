@@ -17,7 +17,7 @@
 
 <br />
 
-**[Install from Source](#-installation)** · **[How It Works](#-the-solution)** · **[Architecture](#-architecture)** · **[Privacy](#-privacy)** · **[Roadmap](#-roadmap)**
+**[Install from Source](#-installation)** · **[Installation Guide](INSTALLATION.md)** · **[How It Works](#-the-solution)** · **[Architecture](#-architecture)** · **[Privacy](#-privacy)** · **[Roadmap](#-roadmap)**
 
 </div>
 
@@ -238,53 +238,21 @@ Impleo is built local-first because application answers are personal — resumes
 - Google Chrome (or any Chromium-based browser: Edge, Brave, Arc)
 - An API key from at least one supported provider (Anthropic, Google Gemini, OpenAI, or Groq)
 
-### 1. Clone the repository
+### Quick start
 
 ```bash
 git clone https://github.com/Agnik47/Impleo.git
 cd Impleo
+
+cd server && npm install && cd ..
+cd extension && npm install && npm run build && cd ..
+
+cd server && npm start
 ```
 
-### 2. Install dependencies
+Then load `extension/dist` as an unpacked extension via `chrome://extensions` (enable **Developer mode** → **Load unpacked**), and enter your API key in the side panel's **Settings** — Impleo runs a live test call before saving it, so you know immediately if the key works.
 
-```bash
-# Extension (side panel)
-cd extension
-npm install
-
-# Local server (API orchestration + storage)
-cd ../server
-npm install
-```
-
-### 3. Build the extension
-
-```bash
-cd ../extension
-npm run build
-```
-
-This produces `extension/dist/` — the unpacked extension Chrome will load.
-
-### 4. Start the local server
-
-```bash
-cd ../server
-npm start
-```
-
-The server listens on `localhost` and owns your profile, history, and API key — keep it running while you use the extension.
-
-### 5. Load the unpacked extension
-
-1. Open `chrome://extensions`
-2. Enable **Developer mode** (top right)
-3. Click **Load unpacked**
-4. Select the `extension/dist` folder
-
-### 6. Configure your API key
-
-Open the Impleo side panel (click the extension icon), complete onboarding, and enter your API key under **Settings**. Impleo runs a live test call before saving it, so you know immediately if the key works.
+> **Using an AI coding agent?** Hand it **[`INSTALLATION.md`](INSTALLATION.md)** directly — it's written as a step-by-step runbook an agent can execute unattended (clone, install, build, start the server, verify), with the two steps that require a human — loading the unpacked extension and entering your API key — clearly called out. It also covers native build prerequisites, port conflicts, and common setup failures in more detail than the summary above.
 
 <br />
 
@@ -348,7 +316,9 @@ impleo/
 │
 ├── IMages/                      Product screenshots and brand assets
 │
-└── docs/                        Product spec, architecture rationale, brand guide
+├── docs/                        Product spec, architecture rationale, brand guide
+│
+└── INSTALLATION.md              Step-by-step setup runbook (human- and AI-agent-friendly)
 ```
 
 <br />
