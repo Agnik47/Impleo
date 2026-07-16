@@ -9,6 +9,11 @@ mkdirSync(dataDir, { recursive: true });
 
 export const db = new Database(join(dataDir, 'impleo.db'));
 db.pragma('journal_mode = WAL');
+// Off by default in SQLite. Needed so deleting a document also drops any
+// domain_document_preference rows pointing at it (see the FK below) — a
+// preference row referencing a deleted file would otherwise resurface as a
+// suggestion for a document that no longer exists.
+db.pragma('foreign_keys = ON');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
@@ -73,6 +78,43 @@ db.exec(`
     answer TEXT NOT NULL,
     source TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  -- Identity documents (resume / CV / portfolio). The BLOB lives here rather than
+  -- in IndexedDB so that AGENTS.md rule 3 holds: the server owns all persistence.
+  -- "Stored locally on your device" stays literally true — this DB is a file on
+  -- disk next to the server, which only ever listens on 127.0.0.1.
+  --
+  -- Capped at 3 rows by documentStore.js, not by a constraint here: SQLite cannot
+  -- express "at most N rows" without a trigger, and the insert path needs to
+  -- return a friendly over-limit message anyway rather than an opaque SQL error.
+  --
+  -- last_used_timestamp is NULL until a document is actually injected into a form
+  -- (never merely on upload), which is what makes "Last used 2 days ago" mean
+  -- "you last sent this to an application," not "you last opened Settings."
+  CREATE TABLE IF NOT EXISTS documents (
+    file_id TEXT PRIMARY KEY,
+    original_name TEXT NOT NULL,
+    user_defined_label TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    bytes BLOB NOT NULL,
+    upload_timestamp TEXT NOT NULL,
+    last_used_timestamp TEXT
+  );
+
+  -- Which document the user last approved for a given site, so the review panel
+  -- can preselect it next visit (devfolio.co -> Hackathon_Portfolio.pdf).
+  --
+  -- This is a PRESELECTION only. Nothing in this table can cause an upload: the
+  -- approval gate in ReviewUploadModal is the sole path to injection, and it does
+  -- not consult this table to decide whether to fire, only what to highlight.
+  -- ON DELETE CASCADE (with foreign_keys = ON above) keeps it free of rows that
+  -- point at deleted documents.
+  CREATE TABLE IF NOT EXISTS domain_document_preference (
+    domain TEXT PRIMARY KEY,
+    file_id TEXT NOT NULL REFERENCES documents(file_id) ON DELETE CASCADE,
     updated_at TEXT NOT NULL
   );
 `);

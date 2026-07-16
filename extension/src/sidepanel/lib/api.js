@@ -56,6 +56,47 @@ export const api = {
     }),
   deleteLearnedAnswer: (questionNorm) =>
     request(`/api/learned-answers/${encodeURIComponent(questionNorm)}`, { method: 'DELETE' }),
+  // --- Identity documents ---
+  // Bytes live in the server's SQLite DB (AGENTS.md rule 3: the server owns all
+  // persistence), and move over this localhost API as base64. They never reach a
+  // remote host: the only outbound call this feature can make is the tie-break in
+  // recommendDocument, which sends labels and filenames — never file contents.
+  getDocuments: () => request('/api/documents'),
+  uploadDocument: ({ originalName, mimeType, contentBase64, userDefinedLabel }) =>
+    request('/api/documents', {
+      method: 'POST',
+      body: JSON.stringify({ originalName, mimeType, contentBase64, userDefinedLabel }),
+    }),
+  getDocumentContent: (fileId) => request(`/api/documents/${encodeURIComponent(fileId)}/content`),
+  renameDocument: (fileId, userDefinedLabel) =>
+    request(`/api/documents/${encodeURIComponent(fileId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ userDefinedLabel }),
+    }),
+  replaceDocumentContent: (fileId, { originalName, mimeType, contentBase64 }) =>
+    request(`/api/documents/${encodeURIComponent(fileId)}/content`, {
+      method: 'PUT',
+      body: JSON.stringify({ originalName, mimeType, contentBase64 }),
+    }),
+  deleteDocument: (fileId) =>
+    request(`/api/documents/${encodeURIComponent(fileId)}`, { method: 'DELETE' }),
+  // Records an actual injection (and, with a domain, that site's preference for
+  // next time). Called only after a successful approved fill — never on selection.
+  markDocumentUsed: (fileId, domain) =>
+    request(`/api/documents/${encodeURIComponent(fileId)}/used`, {
+      method: 'POST',
+      body: JSON.stringify({ domain }),
+    }),
+  getDomainDocumentPreference: (domain) =>
+    request(`/api/document-preferences/${encodeURIComponent(domain)}`),
+  // Ranks stored documents for one detected field. Side-effect free by construction:
+  // it returns a suggestion, and cannot cause an upload.
+  recommendDocument: ({ fieldLabel, pageTitle, pageUrl, formText }) =>
+    request('/api/recommend-document', {
+      method: 'POST',
+      body: JSON.stringify({ fieldLabel, pageTitle, pageUrl, formText }),
+    }),
+
   generateAnswers: (formSchema) =>
     request('/api/generate-answers', { method: 'POST', body: JSON.stringify({ formSchema }) }),
   regenerateAnswer: (question, instruction) =>

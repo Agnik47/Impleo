@@ -3,6 +3,7 @@ import { api } from '../lib/api.js';
 import ImportProfileModal from './ImportProfileModal.jsx';
 import IdentityMemoryManager from './IdentityMemoryManager.jsx';
 import LearnedAnswersManager from './LearnedAnswersManager.jsx';
+import IdentityDocumentsManager from './IdentityDocumentsManager.jsx';
 
 const emptyForm = {
   personal: { name: '', email: '', phone: '', location: '' },
@@ -260,6 +261,17 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
         <div className="border-t border-surface-border pt-2">
           <LearnedAnswersManager />
         </div>
+      </Section>
+
+      {/* Its own Section rather than a third block inside Backup: documents are the
+          one kind of remembered thing that Export/Import does NOT carry (the export
+          is a JSON envelope; base64'd PDFs don't belong in it), so filing them under
+          "Backup" would imply a guarantee that isn't there. */}
+      <Section
+        label="Identity documents"
+        hint="Your documents, always ready when applications need them. Add a resume once — Impleo offers it whenever a form asks for a file, and always waits for your approval."
+      >
+        <IdentityDocumentsManager />
       </Section>
 
       <Section label="AI provider" hint="Pick which provider to use — you only need a key for this one. Use whichever you have free-tier access to (e.g. a free Google Gemini key works if you don't want to pay for API usage).">

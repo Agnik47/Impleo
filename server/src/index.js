@@ -9,6 +9,7 @@ import generateRouter from './routes/generate.js';
 import importExportRouter from './routes/import-export.js';
 import identityMemoryRouter from './routes/identity-memory.js';
 import learnedAnswersRouter from './routes/learned-answers.js';
+import documentsRouter, { DOCUMENT_BODY_PATHS, documentBodyParser } from './routes/documents.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -29,6 +30,10 @@ app.use(
     },
   })
 );
+// Document routes carry base64 file bytes and need a much larger body than the
+// rest of the API. Mounted ahead of the global parser and scoped to those paths so
+// the widened limit reaches only them — see DOCUMENT_BODY_PATHS in routes/documents.js.
+app.use(DOCUMENT_BODY_PATHS, documentBodyParser);
 app.use(express.json({ limit: '2mb' }));
 
 app.use('/api/profile', profileRouter);
@@ -39,6 +44,7 @@ app.use('/api/learned-answers', learnedAnswersRouter);
 app.use('/api/test-key', testKeyRouter);
 app.use('/api', generateRouter);
 app.use('/api', importExportRouter);
+app.use('/api', documentsRouter);
 
 // Safety net: any route that throws (sync) or forwards via next(err) lands
 // here instead of Express's default HTML error page, which api.js's

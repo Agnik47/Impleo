@@ -5,6 +5,10 @@ import { extractGoogleForm, fillGoogleForm } from '../../content-scripts/google-
 import { extractLumaForm, fillLumaForm } from '../../content-scripts/luma.js';
 import { extractGenericForm } from '../../content-scripts/generic-extractor.js';
 import { fillGenericForm } from '../../content-scripts/generic-filler.js';
+import { detectUploadFields } from '../../content-scripts/upload-detector.js';
+import { injectDocumentIntoField } from '../../content-scripts/file-injector.js';
+import ReviewUploadCard from './components/ReviewUploadCard.jsx';
+import { uploadFile } from './lib/documents.js';
 import HeroCard from './components/extension-ui/HeroCard/HeroCard.jsx';
 import WaitingState from './components/extension-ui/WaitingState/WaitingState.jsx';
 import ExtractButton from './components/extension-ui/ExtractButton/ExtractButton.jsx';
@@ -58,6 +62,14 @@ export default function ReviewFlow() {
   const [formSchema, setFormSchema] = useState([]);
   const [reviewState, setReviewState] = useState({});
   const [fillReport, setFillReport] = useState(null);
+  // Upload fields are tracked separately from formSchema rather than as another
+  // fieldType inside it. They don't share the text path's shape (no answer, no
+  // confidence, no regenerate), they don't share its lifecycle (never touched by
+  // "Fill approved" — each file is approved on its own card), and they carry data
+  // formSchema has no room for (accept filter, injection strategy, reachability).
+  const [uploadFields, setUploadFields] = useState([]);
+  const [uploadReview, setUploadReview] = useState({});
+  const [documents, setDocuments] = useState([]);
 
   // chrome.storage.session persistence, keyed per tab. Reopening the side panel
   // (or bouncing to Settings and back, which remounts this component) must
@@ -76,14 +88,39 @@ export default function ReviewFlow() {
         tabKeyRef.current = `impleo_review_${tab.id}`;
         if (chrome?.storage?.session) {
           const stored = (await chrome.storage.session.get(tabKeyRef.current))[tabKeyRef.current];
-          if (!cancelled && stored && Array.isArray(stored.formSchema) && stored.formSchema.length > 0) {
+          const hasStoredWork =
+            stored &&
+            ((Array.isArray(stored.formSchema) && stored.formSchema.length > 0) ||
+              (Array.isArray(stored.uploadFields) && stored.uploadFields.length > 0));
+          if (!cancelled && hasStoredWork) {
             // Coerce a persisted transient/filling phase back to a reviewable one.
             setPhase(stored.phase === 'filling' ? 'reviewing' : stored.phase || 'reviewing');
             setPlatform(stored.platform ?? null);
-            setFormSchema(stored.formSchema);
+            setFormSchema(stored.formSchema ?? []);
             setReviewState(stored.reviewState ?? {});
             setFillReport(stored.fillReport ?? null);
             setErrorMessage(stored.errorMessage ?? null);
+            setUploadFields(stored.uploadFields ?? []);
+            // A persisted 'uploading' is a lie by the time we read it — the panel
+            // closed mid-injection, so the executeScript result was never observed.
+            // Restore it as 'pending' rather than a spinner that will never resolve,
+            // which would also strand the card with no way to approve it. Same
+            // reasoning as the 'filling' -> 'reviewing' coercion above.
+            const restoredUploads = stored.uploadReview ?? {};
+            for (const [id, entry] of Object.entries(restoredUploads)) {
+              if (entry?.status === 'uploading') {
+                restoredUploads[id] = { ...entry, status: 'pending' };
+              }
+            }
+            setUploadReview(restoredUploads);
+            // Metadata only, and re-fetched rather than restored: a document could
+            // have been renamed or deleted from Settings while this panel was closed.
+            api
+              .getDocuments()
+              .then(({ documents: list }) => {
+                if (!cancelled) setDocuments(list);
+              })
+              .catch(() => {});
           }
         }
       } catch {
@@ -103,7 +140,7 @@ export default function ReviewFlow() {
     // dead spinner).
     if (!hydratedRef.current || !tabKeyRef.current || !chrome?.storage?.session) return;
     if (phase === 'extracting' || phase === 'generating') return;
-    if (phase === 'idle' && formSchema.length === 0) {
+    if (phase === 'idle' && formSchema.length === 0 && uploadFields.length === 0) {
       chrome.storage.session.remove(tabKeyRef.current).catch(() => {});
       return;
     }
@@ -114,9 +151,16 @@ export default function ReviewFlow() {
       reviewState,
       fillReport,
       errorMessage,
+      // uploadFields/uploadReview only — never `documents`. Persisting document
+      // metadata would let a stale, deleted, or renamed document render from session
+      // storage; it's cheap to re-fetch and the server is the only source of truth.
+      // File BYTES are never held in component state at all: they're fetched at the
+      // moment of approval and handed straight to the injector.
+      uploadFields,
+      uploadReview,
     };
     chrome.storage.session.set({ [tabKeyRef.current]: snapshot }).catch(() => {});
-  }, [phase, platform, formSchema, reviewState, fillReport, errorMessage]);
+  }, [phase, platform, formSchema, reviewState, fillReport, errorMessage, uploadFields, uploadReview]);
 
   function resetFlow() {
     setPhase('idle');
@@ -125,6 +169,9 @@ export default function ReviewFlow() {
     setFormSchema([]);
     setReviewState({});
     setFillReport(null);
+    setUploadFields([]);
+    setUploadReview({});
+    setDocuments([]);
     if (tabKeyRef.current && chrome?.storage?.session) {
       chrome.storage.session.remove(tabKeyRef.current).catch(() => {});
     }
@@ -141,12 +188,24 @@ export default function ReviewFlow() {
   // defeat ReviewCard's memoization (see the note on handleAccept).
   const formSchemaRef = useRef(formSchema);
   const reviewStateRef = useRef(reviewState);
+  const uploadFieldsRef = useRef(uploadFields);
+  const uploadReviewRef = useRef(uploadReview);
   useEffect(() => {
     formSchemaRef.current = formSchema;
   }, [formSchema]);
   useEffect(() => {
     reviewStateRef.current = reviewState;
   }, [reviewState]);
+  useEffect(() => {
+    uploadFieldsRef.current = uploadFields;
+  }, [uploadFields]);
+  useEffect(() => {
+    uploadReviewRef.current = uploadReview;
+  }, [uploadReview]);
+
+  const updateUploadReview = useCallback((id, patch) => {
+    setUploadReview((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  }, []);
 
   // The learning loop's capture half (docs/Issus.md's saveUserCorrection): a
   // confirmed answer is recorded the moment it's confirmed, so the same question
@@ -256,10 +315,64 @@ export default function ReviewFlow() {
     }
   }
 
+  // Loads the stored documents and ranks them per detected upload field.
+  //
+  // Best-effort throughout: a failed ranking must never block the review. The card
+  // still renders with the full file list and no suggestion — the user can always
+  // pick for themselves, which is the point of the feature. A recommendation is a
+  // convenience on top of a manual choice, not a prerequisite for one.
+  async function loadUploadContext(fields, tab) {
+    if (fields.length === 0) return;
+
+    let docs = [];
+    try {
+      ({ documents: docs } = await api.getDocuments());
+      setDocuments(docs);
+    } catch (err) {
+      setErrorMessage(`Couldn't load your identity documents: ${err.message}`);
+      return;
+    }
+
+    // The already-extracted question text is the cheapest strong signal available
+    // for what kind of application this is — the words "hackathon" or "research"
+    // usually appear in a question, not in the upload field's own label.
+    const formText = formSchemaRef.current.map((q) => q.questionText).join(' ');
+
+    const recommendations = await Promise.all(
+      fields.map((field) =>
+        api
+          .recommendDocument({
+            fieldLabel: `${field.label} ${field.kindLabel}`,
+            pageTitle: tab.title || '',
+            pageUrl: tab.url || '',
+            formText,
+          })
+          .catch(() => null)
+      )
+    );
+
+    const next = {};
+    fields.forEach((field, i) => {
+      const recommendation = recommendations[i];
+      next[field.id] = {
+        // Always 'pending'. There is no branch that starts a card in any other
+        // state — a suggestion preselects a radio and nothing more.
+        status: 'pending',
+        selectedFileId: recommendation?.suggestedFileId ?? docs[0]?.fileId ?? null,
+        recommendation,
+        error: null,
+        note: null,
+      };
+    });
+    setUploadReview(next);
+  }
+
   async function handleExtract() {
     setPhase('extracting');
     setErrorMessage(null);
     setFillReport(null);
+    setUploadFields([]);
+    setUploadReview({});
     try {
       const tab = await getActiveTab();
       const hostname = new URL(tab.url).hostname;
@@ -271,19 +384,147 @@ export default function ReviewFlow() {
         func: EXTRACTORS[detectedPlatform],
       });
 
-      if (!schema || schema.length === 0) {
+      // Its own pass over every platform, rather than three extractors each growing
+      // upload logic. Cheap (pure DOM, no network) and it finds custom uploaders the
+      // generic extractor structurally cannot see — on most ATS pages the resume
+      // field isn't a visible input[type=file] at all.
+      const [{ result: detectedUploads }] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: detectUploadFields,
+      });
+      const uploads = detectedUploads || [];
+
+      const textFields = (schema || []).filter((q) => q.fieldType !== 'upload');
+      if (textFields.length === 0 && uploads.length === 0) {
         setPhase('idle');
         setErrorMessage('No fillable fields found on this page.');
         return;
       }
 
-      setFormSchema(schema);
+      setFormSchema(schema || []);
+      setUploadFields(uploads);
+      // Kept current so loadUploadContext can read the questions for form context —
+      // the state set above won't have flushed yet.
+      formSchemaRef.current = schema || [];
+
+      // A page with only an upload field is a complete, reviewable form now; before
+      // this feature it was a dead end. Skip the (paid) generate call in that case
+      // rather than asking a model to answer nothing.
+      if (textFields.length === 0) {
+        setReviewState({});
+        setPhase('reviewing');
+        await loadUploadContext(uploads, tab);
+        return;
+      }
+
       await generateAnswers(schema);
+      await loadUploadContext(uploads, tab);
     } catch (err) {
       setPhase('error');
       setErrorMessage(err.message);
     }
   }
+
+  const handleSelectDocument = useCallback(
+    (fieldId, fileId) => {
+      // Doubles as "undo skip": re-selecting returns the card to the approval gate
+      // rather than to any auto-action.
+      updateUploadReview(fieldId, { selectedFileId: fileId, status: 'pending', error: null });
+    },
+    [updateUploadReview]
+  );
+
+  const handleSkipUpload = useCallback(
+    (fieldId) => updateUploadReview(fieldId, { status: 'skipped', error: null }),
+    [updateUploadReview]
+  );
+
+  // Adds a document mid-review and selects it for this field. Does NOT approve it —
+  // uploading a new file expresses "I want this available here", not "send it".
+  const handleAddDocument = useCallback(
+    async (fieldId, file) => {
+      try {
+        // Not named `document` — that shadows the global in a file that also runs
+        // DOM-adjacent code, and the next reader shouldn't have to check which one
+        // a bare `document` means.
+        const saved = await uploadFile(file);
+        const { documents: list } = await api.getDocuments();
+        setDocuments(list);
+        updateUploadReview(fieldId, { selectedFileId: saved.fileId, error: null });
+      } catch (err) {
+        updateUploadReview(fieldId, { error: err.message });
+      }
+    },
+    [updateUploadReview]
+  );
+
+  // THE approval gate. This is the only function in the codebase that can put a file
+  // on a page, it runs only from a click on "Approve upload", and it injects exactly
+  // the one document selected on exactly the one field approved. It never loops over
+  // fields, and nothing schedules it.
+  const handleApproveUpload = useCallback(
+    async (fieldId) => {
+      const field = uploadFieldsRef.current.find((f) => f.id === fieldId);
+      const fileId = uploadReviewRef.current[fieldId]?.selectedFileId;
+      if (!field || !fileId) return;
+
+      updateUploadReview(fieldId, { status: 'uploading', error: null, note: null });
+      try {
+        const tab = await getActiveTab();
+        // Bytes are fetched here — at the moment of approval — and not held in state.
+        // A document deleted from Settings since this panel opened 404s right here,
+        // which is the intended handling of a dead reference: an honest error rather
+        // than a stale blob.
+        const content = await api.getDocumentContent(fileId);
+
+        const [{ result }] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: injectDocumentIntoField,
+          args: [
+            field.selector,
+            {
+              contentBase64: content.contentBase64,
+              mimeType: content.mimeType,
+              fileName: content.originalName,
+              strategy: field.strategy,
+            },
+          ],
+        });
+
+        if (!result || (result.status !== 'filled' && result.status !== 'dispatched')) {
+          updateUploadReview(fieldId, {
+            status: 'failed',
+            error: result?.reason || 'Impleo could not attach that file.',
+          });
+          return;
+        }
+
+        updateUploadReview(fieldId, {
+          status: 'uploaded',
+          error: null,
+          // Carries the drop-strategy caveat when there is one; 'filled' was verified
+          // by reading the input back, so it has nothing to add.
+          note: result.status === 'dispatched' ? result.reason : null,
+        });
+
+        // Recorded only now, on the approved-and-injected path: "last used" means
+        // "you actually sent this somewhere", and this site's remembered preference
+        // reflects a choice the user saw through. Best-effort — a failed bookkeeping
+        // write must not present a successful attach as a failure.
+        try {
+          const domain = new URL(tab.url).hostname;
+          await api.markDocumentUsed(fileId, domain);
+          const { documents: list } = await api.getDocuments();
+          setDocuments(list);
+        } catch {
+          // The file is on the page; that's what the user asked for.
+        }
+      } catch (err) {
+        updateUploadReview(fieldId, { status: 'failed', error: err.message });
+      }
+    },
+    [updateUploadReview]
+  );
 
   const handleRegenerate = useCallback(
     async (question, instruction) => {
@@ -455,12 +696,35 @@ export default function ReviewFlow() {
       ).length,
     [reviewState]
   );
+  // Only fields Impleo can actually attach to count toward "N of M attached" — a
+  // Google Drive picker would otherwise leave the counter permanently short of its
+  // total, reading as a failure when it's a documented limitation.
+  const injectableUploadCount = useMemo(
+    () => uploadFields.filter((f) => f.injectable).length,
+    [uploadFields]
+  );
+  const uploadedCount = useMemo(
+    () => Object.values(uploadReview).filter((r) => r.status === 'uploaded').length,
+    [uploadReview]
+  );
+  // A requested document that's still sitting at its approval gate means the
+  // application isn't done, however well the text fields went.
+  const uploadsResolved = useMemo(
+    () =>
+      uploadFields
+        .filter((f) => f.injectable)
+        .every((f) => ['uploaded', 'skipped'].includes(uploadReview[f.id]?.status)),
+    [uploadFields, uploadReview]
+  );
+
   // Purely a read of data handleFill already produces — not a new state path.
   // Gates CompletionState: a celebration only when nothing in the fill
   // actually failed, not on "a fill was attempted."
   const allFilledSuccessfully = useMemo(
-    () => Boolean(fillReport && fillReport.length > 0 && fillReport.every((r) => r.status === 'filled')),
-    [fillReport]
+    () =>
+      Boolean(fillReport && fillReport.length > 0 && fillReport.every((r) => r.status === 'filled')) &&
+      uploadsResolved,
+    [fillReport, uploadsResolved]
   );
 
   return (
@@ -514,21 +778,60 @@ export default function ReviewFlow() {
           </div>
 
           <StaggerContainer className="space-y-2">
-            {formSchema.map((q) => (
-              <StaggerItem key={q.id}>
-                <ReviewCard
-                  question={q}
-                  review={reviewState[q.id]}
-                  fillResult={fillReport?.find((r) => r.id === q.id)}
-                  onAccept={handleAccept}
-                  onEdit={handleEditAnswer}
-                  onSkip={handleSkip}
-                  onRegenerate={handleRegenerate}
-                  onToggleRemember={handleToggleRemember}
-                />
-              </StaggerItem>
-            ))}
+            {/* Upload fields are excluded here and rendered as their own cards below:
+                ReviewCard's 'upload' branch is the old dead end ("Files can't be
+                filled automatically"), which this feature replaces. That branch stays
+                in place as a fallback for anything the detector misses. */}
+            {formSchema
+              .filter((q) => q.fieldType !== 'upload')
+              .map((q) => (
+                <StaggerItem key={q.id}>
+                  <ReviewCard
+                    question={q}
+                    review={reviewState[q.id]}
+                    fillResult={fillReport?.find((r) => r.id === q.id)}
+                    onAccept={handleAccept}
+                    onEdit={handleEditAnswer}
+                    onSkip={handleSkip}
+                    onRegenerate={handleRegenerate}
+                    onToggleRemember={handleToggleRemember}
+                  />
+                </StaggerItem>
+              ))}
           </StaggerContainer>
+
+          {uploadFields.length > 0 && (
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="text-card text-ink-primary">
+                  Document{uploadFields.length === 1 ? '' : 's'} requested
+                </h2>
+                <span className="text-caption text-ink-muted">
+                  {uploadedCount} of {injectableUploadCount} attached
+                </span>
+              </div>
+              {/* Stated on the review surface, not just in Settings — this is the
+                  moment the user is deciding whether to trust it. */}
+              <p className="text-caption text-ink-muted">
+                Stored locally on your device. Impleo attaches a file only when you approve it.
+              </p>
+              <StaggerContainer className="space-y-2">
+                {uploadFields.map((field) => (
+                  <StaggerItem key={field.id}>
+                    <ReviewUploadCard
+                      field={field}
+                      review={uploadReview[field.id]}
+                      documents={documents}
+                      onSelect={handleSelectDocument}
+                      onApprove={handleApproveUpload}
+                      onSkip={handleSkipUpload}
+                      onAddDocument={handleAddDocument}
+                    />
+                  </StaggerItem>
+                ))}
+              </StaggerContainer>
+            </div>
+          )}
         </>
       )}
     </div>

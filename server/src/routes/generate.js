@@ -20,7 +20,12 @@ const MAX_HISTORY = 10;
 
 // Resolves the active provider, its saved key, and its saved (or default)
 // model from settings, or null if the user hasn't finished configuring one.
-function getActiveProvider() {
+//
+// Exported for routes/documents.js's tie-break call. Shared rather than copied so
+// that "which provider is active" keeps exactly one definition — a second copy
+// would silently drift the day a provider is added (AGENTS.md: the dispatch reads
+// the active provider from settings, never hardcoded).
+export function getActiveProvider() {
   const row = db.prepare('SELECT * FROM settings WHERE id = 1').get();
   const providerId = row?.provider;
   if (!providerId) return null;
