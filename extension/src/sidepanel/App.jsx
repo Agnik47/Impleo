@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { api } from './lib/api.js';
+import { getProfile } from './lib/profile.js';
+import { getSettings } from './lib/settings.js';
+import { ensureStorageVersion } from './lib/storage.js';
 import Onboarding from './components/Onboarding.jsx';
 import ReviewFlow from './ReviewFlow.jsx';
 import BackgroundEffects from './components/extension-ui/BackgroundEffects/BackgroundEffects.jsx';
 
 export default function App() {
-  const [status, setStatus] = useState('loading'); // loading | onboarding | main | server-error
+  const [status, setStatus] = useState('loading'); // loading | onboarding | main | storage-error
   const [profile, setProfile] = useState(null);
   const [settings, setSettings] = useState(null);
   const [loadError, setLoadError] = useState(null);
@@ -14,9 +16,10 @@ export default function App() {
     setStatus('loading');
     setLoadError(null);
     try {
+      await ensureStorageVersion();
       const [profileResult, settingsResult] = await Promise.all([
-        api.getProfile(),
-        api.getSettings(),
+        getProfile(),
+        getSettings(),
       ]);
       setProfile(profileResult);
       setSettings(settingsResult);
@@ -26,7 +29,7 @@ export default function App() {
       setStatus(profileResult && isConfigured ? 'main' : 'onboarding');
     } catch (err) {
       setLoadError(err.message);
-      setStatus('server-error');
+      setStatus('storage-error');
     }
   }
 
@@ -46,18 +49,17 @@ export default function App() {
     );
   }
 
-  if (status === 'server-error') {
+  if (status === 'storage-error') {
     return (
       <>
         <BackgroundEffects />
         <div className="relative mx-auto w-full max-w-[500px] space-y-2 p-3 sm:p-4">
           <Header showSettings={false} />
           <div className="min-w-0 break-words rounded-card border border-red-500/25 bg-red-950/30 p-3 text-body text-red-300 backdrop-blur-md">
-            <p className="font-medium text-red-200">Can't reach the local server.</p>
+            <p className="font-medium text-red-200">Couldn't read your saved data.</p>
             <p className="mt-1 text-ink-secondary">
-              Make sure <code className="text-ink-primary">server/</code> is running (
-              <code className="text-ink-primary">npm run dev</code> in{' '}
-              <code className="text-ink-primary">server/</code>).
+              This is usually a temporary browser storage issue. Try reopening the side panel; if
+              it keeps happening, check that Chrome isn't out of disk space.
             </p>
             <p className="mt-2 text-caption text-ink-muted">{loadError}</p>
           </div>

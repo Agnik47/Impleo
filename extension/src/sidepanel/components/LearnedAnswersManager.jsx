@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api.js';
+import { getLearnedAnswers, deleteLearnedAnswer } from '../lib/learnedAnswers.js';
 
 // View / delete the answers Impleo has learned from confirmed reviews — the
 // questions that have no canonical identity key ("How many hackathons have you
@@ -20,7 +20,7 @@ export default function LearnedAnswersManager() {
   async function load() {
     setError(null);
     try {
-      setItems(await api.getLearnedAnswers());
+      setItems(await getLearnedAnswers());
     } catch (err) {
       setError(err.message);
       setItems([]);
@@ -33,7 +33,7 @@ export default function LearnedAnswersManager() {
 
   async function remove(questionNorm) {
     try {
-      await api.deleteLearnedAnswer(questionNorm);
+      await deleteLearnedAnswer(questionNorm);
       await load();
     } catch (err) {
       setError(err.message);

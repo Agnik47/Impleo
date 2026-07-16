@@ -1,13 +1,20 @@
 // Browser-side concerns for identity documents: turning a picked File into
-// something the API can carry, and turning stored metadata into card copy.
+// something documentStore.js can store, and turning stored metadata into card
+// copy.
 //
-// Not a wrapper around api.js — it holds what api.js can't (File/FileReader) and
-// what the server shouldn't be asked for (relative-time strings for a card). The
-// validation here is a UX affordance only: it fails a bad pick in the file dialog
-// instead of after a 13MB round-trip. documentStore.js re-checks every rule on the
-// server and remains the authority; this copy can only ever reject early, never
-// admit something the server would refuse.
-import { api } from './api.js';
+// The validation here is a UX affordance only: it fails a bad pick in the file
+// dialog instead of after committing it to IndexedDB. documentStore.js
+// re-checks every rule and remains the authority; this copy can only ever
+// reject early, never admit something documentStore.js would refuse.
+//
+// CLIENT-ONLY PRODUCTION PIVOT: this file used to base64-encode every upload
+// (via fileToBase64/FileReader) because the bytes had to cross an HTTP request
+// body to reach the local server. There's no HTTP hop anymore — saveDocument/
+// replaceDocumentContent take a raw ArrayBuffer directly (documentStore.js
+// still base64-encodes internally, but only once, at the moment of injection
+// into a page — see its getDocumentContent()). fileToBase64() and the
+// FileReader it used are gone from this file entirely.
+import { saveDocument, replaceDocumentContent } from './documentStore.js';
 
 /** @typedef {import('./documentTypes.js').StoredDocument} StoredDocument */
 
@@ -52,33 +59,6 @@ export function validateFile(file) {
 }
 
 /**
- * Reads a File into base64 for transport.
- *
- * Uses readAsDataURL and strips the prefix rather than looping over a Uint8Array:
- * a 10MB byte-by-byte String.fromCharCode loop blocks the side panel's main thread
- * long enough to drop frames, while the FileReader does the encode off-thread.
- *
- * @param {File} file
- * @returns {Promise<string>}
- */
-export function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error(`Couldn't read "${file.name}" from disk.`));
-    reader.onload = () => {
-      const result = String(reader.result || '');
-      const comma = result.indexOf(',');
-      if (comma === -1) {
-        reject(new Error(`Couldn't encode "${file.name}".`));
-        return;
-      }
-      resolve(result.slice(comma + 1));
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-/**
  * Derives the MIME type to send. Prefers the extension for the reason in
  * validateFile; falls back to whatever the browser claimed.
  * @param {File} file
@@ -103,27 +83,25 @@ export function labelFromFileName(fileName) {
 export async function uploadFile(file, userDefinedLabel) {
   const invalid = validateFile(file);
   if (invalid) throw new Error(invalid);
-  const contentBase64 = await fileToBase64(file);
-  const { document } = await api.uploadDocument({
+  const bytes = await file.arrayBuffer();
+  return saveDocument({
     originalName: file.name,
     mimeType: mimeTypeFor(file),
-    contentBase64,
+    bytes,
     userDefinedLabel: userDefinedLabel || labelFromFileName(file.name),
   });
-  return document;
 }
 
 /** Swaps an existing document's bytes, keeping its fileId (and its domain preferences). */
 export async function replaceFile(fileId, file) {
   const invalid = validateFile(file);
   if (invalid) throw new Error(invalid);
-  const contentBase64 = await fileToBase64(file);
-  const { document } = await api.replaceDocumentContent(fileId, {
+  const bytes = await file.arrayBuffer();
+  return replaceDocumentContent(fileId, {
     originalName: file.name,
     mimeType: mimeTypeFor(file),
-    contentBase64,
+    bytes,
   });
-  return document;
 }
 
 // --- Display helpers --------------------------------------------------------

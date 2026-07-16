@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { api } from '../lib/api.js';
+import { importProfile } from '../lib/importExport.js';
 
 // This prompt is Impleo's onboarding engine for anyone who doesn't want to hand-fill
 // the form: it's pasted into an external AI assistant (ChatGPT/Claude/Gemini/Grok/etc.)
@@ -115,7 +115,7 @@ export default function ImportProfileModal({ open, onClose, currentProfile, onIm
 
     setBusy(true);
     try {
-      const result = await api.importProfile(parsed, { dryRun: true });
+      const result = await importProfile(parsed, { dryRun: true });
       setPending({ envelope: parsed, summary: result.summary });
     } catch (err) {
       setError(err.message);
@@ -141,7 +141,7 @@ export default function ImportProfileModal({ open, onClose, currentProfile, onIm
     setBusy(true);
     setError(null);
     try {
-      await api.importProfile(pending.envelope);
+      await importProfile(pending.envelope);
       onImported();
       handleClose();
     } catch (err) {

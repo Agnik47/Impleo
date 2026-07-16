@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { api } from '../lib/api.js';
+import { exportProfile } from '../lib/importExport.js';
+import { testApiKey, saveSettings } from '../lib/settings.js';
+import { saveProfile } from '../lib/profile.js';
 import ImportProfileModal from './ImportProfileModal.jsx';
 import IdentityMemoryManager from './IdentityMemoryManager.jsx';
 import LearnedAnswersManager from './LearnedAnswersManager.jsx';
@@ -126,7 +128,7 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
     setExporting(true);
     setExportError(null);
     try {
-      const envelope = await api.exportProfile();
+      const envelope = await exportProfile();
       const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -169,7 +171,7 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
     setTesting(true);
     setKeyStatus(null);
     try {
-      const result = await api.testApiKey(provider, apiKey, model || undefined);
+      const result = await testApiKey(provider, apiKey, model || undefined);
       setKeyStatus(
         result.ok
           ? { state: 'ok', message: 'Key works.' }
@@ -194,10 +196,10 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
     // Always save settings so the active provider is persisted, even when the
     // key field is blank (switching to an already-saved provider).
     const tasks = [
-      { label: 'profile', run: () => api.saveProfile(formStateToProfile(form)) },
+      { label: 'profile', run: () => saveProfile(formStateToProfile(form)) },
       {
         label: 'provider settings',
-        run: () => api.saveSettings(provider, apiKey || undefined, model || undefined),
+        run: () => saveSettings(provider, apiKey || undefined, model || undefined),
       },
     ];
     const results = await Promise.allSettled(tasks.map((t) => t.run()));

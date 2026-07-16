@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api } from '../lib/api.js';
+import { listDocuments, renameDocument, deleteDocument } from '../lib/documentStore.js';
 import {
   FILE_ACCEPT_ATTRIBUTE,
   MAX_DOCUMENTS,
@@ -69,7 +69,7 @@ export default function IdentityDocumentsManager() {
   async function load() {
     setError(null);
     try {
-      const { documents: list } = await api.getDocuments();
+      const list = await listDocuments();
       setDocuments(list);
     } catch (err) {
       setError(err.message);
@@ -121,7 +121,7 @@ export default function IdentityDocumentsManager() {
   async function saveRename(fileId) {
     setError(null);
     try {
-      await api.renameDocument(fileId, draftLabel);
+      await renameDocument(fileId, draftLabel);
       setEditingId(null);
       await load();
     } catch (err) {
@@ -133,7 +133,7 @@ export default function IdentityDocumentsManager() {
     setError(null);
     setConfirmingDeleteId(null);
     try {
-      await api.deleteDocument(fileId);
+      await deleteDocument(fileId);
       await load();
     } catch (err) {
       setError(err.message);

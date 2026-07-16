@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api } from './lib/api.js';
+import { saveLearnedAnswer } from './lib/learnedAnswers.js';
+import { appendQaHistory } from './lib/qaHistory.js';
+import { saveIdentityMemoryEntry } from './lib/identityMemory.js';
+import {
+  listDocuments,
+  recommendDocument,
+  getDocumentContent,
+  markDocumentUsed,
+} from './lib/documentStore.js';
+// Aliased: this file already defines its own local generateAnswers(schema),
+// which calls this imported one internally -- see the function below.
+import {
+  generateAnswers as generateAnswersFromModel,
+  regenerateAnswer,
+} from './lib/generate.js';
 import ReviewCard from './components/ReviewCard.jsx';
 import { extractGoogleForm, fillGoogleForm } from '../../content-scripts/google-forms.js';
 import { extractLumaForm, fillLumaForm } from '../../content-scripts/luma.js';
@@ -43,9 +57,10 @@ function answerToText(answer) {
   return Array.isArray(answer) ? answer.join(', ') : String(answer ?? '');
 }
 
-// Mirrors the server's isLearnable (server/src/learnedMemory.js) so that accepting
-// an essay doesn't fire a round-trip the server would only reject. The server owns
-// the real policy and re-checks every write — this is an optimization, not the rule.
+// Mirrors lib/learnedAnswers.js's own isLearnable() so that accepting an essay
+// doesn't even bother calling saveLearnedAnswer for something it would reject
+// anyway. learnedAnswers.js owns the real policy and re-checks every write —
+// this is a cheap pre-filter, not the rule itself.
 const LEARNABLE_FIELD_TYPES = new Set(['text', 'radio', 'checkbox_single', 'dropdown', 'checkbox']);
 const MAX_LEARNABLE_ANSWER_LENGTH = 120;
 
@@ -115,9 +130,8 @@ export default function ReviewFlow() {
             setUploadReview(restoredUploads);
             // Metadata only, and re-fetched rather than restored: a document could
             // have been renamed or deleted from Settings while this panel was closed.
-            api
-              .getDocuments()
-              .then(({ documents: list }) => {
+            listDocuments()
+              .then((list) => {
                 if (!cancelled) setDocuments(list);
               })
               .catch(() => {});
@@ -218,7 +232,7 @@ export default function ReviewFlow() {
     const question = formSchemaRef.current.find((q) => q.id === id);
     if (!isLearnable(question, answer)) return;
     try {
-      await api.saveLearnedAnswer({
+      await saveLearnedAnswer({
         questionText: question.questionText,
         answer: answerToText(answer),
         // The classification, when there is one, so the router can defer to
@@ -263,7 +277,7 @@ export default function ReviewFlow() {
   async function generateAnswers(schema) {
     setPhase('generating');
     try {
-      const { answers } = await api.generateAnswers(
+      const { answers } = await generateAnswersFromModel(
         schema.map(({ id, questionText, fieldType, options, required }) => ({
           id,
           questionText,
@@ -326,7 +340,7 @@ export default function ReviewFlow() {
 
     let docs = [];
     try {
-      ({ documents: docs } = await api.getDocuments());
+      docs = await listDocuments();
       setDocuments(docs);
     } catch (err) {
       setErrorMessage(`Couldn't load your identity documents: ${err.message}`);
@@ -340,14 +354,12 @@ export default function ReviewFlow() {
 
     const recommendations = await Promise.all(
       fields.map((field) =>
-        api
-          .recommendDocument({
-            fieldLabel: `${field.label} ${field.kindLabel}`,
-            pageTitle: tab.title || '',
-            pageUrl: tab.url || '',
-            formText,
-          })
-          .catch(() => null)
+        recommendDocument({
+          fieldLabel: `${field.label} ${field.kindLabel}`,
+          pageTitle: tab.title || '',
+          pageUrl: tab.url || '',
+          formText,
+        }).catch(() => null)
       )
     );
 
@@ -448,7 +460,7 @@ export default function ReviewFlow() {
         // DOM-adjacent code, and the next reader shouldn't have to check which one
         // a bare `document` means.
         const saved = await uploadFile(file);
-        const { documents: list } = await api.getDocuments();
+        const list = await listDocuments();
         setDocuments(list);
         updateUploadReview(fieldId, { selectedFileId: saved.fileId, error: null });
       } catch (err) {
@@ -475,7 +487,7 @@ export default function ReviewFlow() {
         // A document deleted from Settings since this panel opened 404s right here,
         // which is the intended handling of a dead reference: an honest error rather
         // than a stale blob.
-        const content = await api.getDocumentContent(fileId);
+        const content = await getDocumentContent(fileId);
 
         const [{ result }] = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
@@ -513,8 +525,8 @@ export default function ReviewFlow() {
         // write must not present a successful attach as a failure.
         try {
           const domain = new URL(tab.url).hostname;
-          await api.markDocumentUsed(fileId, domain);
-          const { documents: list } = await api.getDocuments();
+          await markDocumentUsed(fileId, domain);
+          const list = await listDocuments();
           setDocuments(list);
         } catch {
           // The file is on the page; that's what the user asked for.
@@ -530,7 +542,7 @@ export default function ReviewFlow() {
     async (question, instruction) => {
       updateReview(question.id, { regenerating: true });
       try {
-        const { answer } = await api.regenerateAnswer(
+        const { answer } = await regenerateAnswer(
           {
             id: question.id,
             questionText: question.questionText,
@@ -598,7 +610,7 @@ export default function ReviewFlow() {
         context: tab.url,
         date: new Date().toISOString(),
       }));
-      await Promise.allSettled(historyEntries.map((entry) => api.appendQaHistory(entry)));
+      await Promise.allSettled(historyEntries.map((entry) => appendQaHistory(entry)));
 
       // Persist any approved identity fields the user chose to remember. Choice-field
       // answers can be arrays; identity values are single strings, so join defensively.
@@ -633,7 +645,7 @@ export default function ReviewFlow() {
         }
       }
 
-      const identityWrites = safeCandidates.map((c) => api.saveIdentityMemory(c.canonicalKey, c.value, 'user'));
+      const identityWrites = safeCandidates.map((c) => saveIdentityMemoryEntry(c.canonicalKey, c.value, 'user'));
       await Promise.allSettled(identityWrites);
 
       if (collisions.length > 0) {

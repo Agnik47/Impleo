@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api.js';
+import { getIdentityMemory, saveIdentityMemoryEntry, deleteIdentityMemoryEntry } from '../lib/identityMemory.js';
 
 // View / edit / delete the semantic identity values Impleo has remembered
 // (father_name, date_of_birth, aadhaar_number, ...). Lets a user fix a
@@ -23,7 +23,7 @@ export default function IdentityMemoryManager() {
   async function load() {
     setError(null);
     try {
-      setItems(await api.getIdentityMemory());
+      setItems(await getIdentityMemory());
     } catch (err) {
       setError(err.message);
       setItems([]);
@@ -41,7 +41,7 @@ export default function IdentityMemoryManager() {
 
   async function saveEdit(canonicalKey) {
     try {
-      await api.saveIdentityMemory(canonicalKey, draft, 'user');
+      await saveIdentityMemoryEntry(canonicalKey, draft, 'user');
       setEditingKey(null);
       await load();
     } catch (err) {
@@ -51,7 +51,7 @@ export default function IdentityMemoryManager() {
 
   async function remove(canonicalKey) {
     try {
-      await api.deleteIdentityMemory(canonicalKey);
+      await deleteIdentityMemoryEntry(canonicalKey);
       await load();
     } catch (err) {
       setError(err.message);
