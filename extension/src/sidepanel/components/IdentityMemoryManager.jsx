@@ -4,6 +4,13 @@ import { api } from '../lib/api.js';
 // View / edit / delete the semantic identity values Impleo has remembered
 // (father_name, date_of_birth, aadhaar_number, ...). Lets a user fix a
 // mis-classified or outdated value without re-triggering a form.
+//
+// Every button here MUST carry type="button". This component renders inside
+// Onboarding's <form onSubmit={handleSave}>, and a <button> in a form defaults to
+// type="submit" — so an untyped Edit/Save/Delete would submit the whole profile
+// form, which saves the profile and calls onSaved() -> App.load() -> setStatus('main'),
+// bouncing the user to the homepage mid-edit. Onboarding.jsx and ImportProfileModal.jsx
+// already follow this rule for their own buttons.
 const secondaryBtn =
   'shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-2 py-0.5 text-caption text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50';
 
@@ -85,15 +92,15 @@ export default function IdentityMemoryManager() {
                 </span>
                 <div className="flex shrink-0 gap-1.5">
                   {editingKey === item.canonicalKey ? (
-                    <button className={secondaryBtn} onClick={() => saveEdit(item.canonicalKey)}>
+                    <button type="button" className={secondaryBtn} onClick={() => saveEdit(item.canonicalKey)}>
                       Save
                     </button>
                   ) : (
-                    <button className={secondaryBtn} onClick={() => startEdit(item)}>
+                    <button type="button" className={secondaryBtn} onClick={() => startEdit(item)}>
                       Edit
                     </button>
                   )}
-                  <button className={secondaryBtn} onClick={() => remove(item.canonicalKey)}>
+                  <button type="button" className={secondaryBtn} onClick={() => remove(item.canonicalKey)}>
                     Delete
                   </button>
                 </div>
@@ -103,6 +110,18 @@ export default function IdentityMemoryManager() {
                   className="mt-1 w-full rounded-input border border-surface-border bg-surface-card px-2 py-1 text-body text-ink-primary focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
+                  // The other half of the type="button" problem above: Enter in a
+                  // text field inside a form triggers implicit submission, so
+                  // without preventDefault this saves the value AND submits the
+                  // profile form, landing the user back on the homepage. Enter here
+                  // must mean "save this one value" and nothing more.
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      saveEdit(item.canonicalKey);
+                    }
+                    if (e.key === 'Escape') setEditingKey(null);
+                  }}
                   autoFocus
                 />
               ) : (

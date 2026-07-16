@@ -78,7 +78,10 @@ export default function LearnedAnswersManager() {
                     </p>
                   )}
                 </div>
-                <button className={secondaryBtn} onClick={() => remove(item.questionNorm)}>
+                {/* type="button" is required: this renders inside Onboarding's
+                    <form onSubmit={handleSave}>, where an untyped button defaults to
+                    type="submit" and would save the profile + bounce to the homepage. */}
+                <button type="button" className={secondaryBtn} onClick={() => remove(item.questionNorm)}>
                   Forget
                 </button>
               </div>

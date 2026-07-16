@@ -17,6 +17,14 @@ import {
 //
 // Sibling of IdentityMemoryManager: same "here's what Impleo remembers about you,
 // and here's how to fix it" contract, for files instead of strings.
+//
+// Every button here MUST carry type="button", and Enter in the rename field MUST
+// preventDefault. This component renders inside Onboarding's
+// <form onSubmit={handleSave}>, where a <button> defaults to type="submit" and Enter
+// in a text field triggers implicit submission. Either one saves the profile and
+// calls onSaved() -> App.load() -> setStatus('main'), throwing the user back to the
+// homepage mid-edit. Onboarding.jsx and ImportProfileModal.jsx already follow this
+// rule for their own buttons.
 
 const secondaryBtn =
   'shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-2 py-0.5 text-caption text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50';
@@ -184,7 +192,13 @@ export default function IdentityDocumentsManager() {
                         value={draftLabel}
                         onChange={(e) => setDraftLabel(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') saveRename(doc.fileId);
+                          if (e.key === 'Enter') {
+                            // Without this, Enter saves the rename AND implicitly
+                            // submits the surrounding profile form — see the note at
+                            // the top of this file.
+                            e.preventDefault();
+                            saveRename(doc.fileId);
+                          }
                           if (e.key === 'Escape') setEditingId(null);
                         }}
                         autoFocus
@@ -216,10 +230,10 @@ export default function IdentityDocumentsManager() {
                 <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
                   {editingId === doc.fileId ? (
                     <>
-                      <button className={secondaryBtn} onClick={() => saveRename(doc.fileId)}>
+                      <button type="button" className={secondaryBtn} onClick={() => saveRename(doc.fileId)}>
                         Save
                       </button>
-                      <button className={secondaryBtn} onClick={() => setEditingId(null)}>
+                      <button type="button" className={secondaryBtn} onClick={() => setEditingId(null)}>
                         Cancel
                       </button>
                     </>
@@ -229,16 +243,17 @@ export default function IdentityDocumentsManager() {
                           drops every site preference pointing at it, and a native
                           modal in a side panel reads as a browser error. */}
                       <span className="self-center text-caption text-ink-secondary">Delete?</span>
-                      <button className={dangerBtn} onClick={() => remove(doc.fileId)}>
+                      <button type="button" className={dangerBtn} onClick={() => remove(doc.fileId)}>
                         Yes
                       </button>
-                      <button className={secondaryBtn} onClick={() => setConfirmingDeleteId(null)}>
+                      <button type="button" className={secondaryBtn} onClick={() => setConfirmingDeleteId(null)}>
                         Cancel
                       </button>
                     </>
                   ) : (
                     <>
                       <button
+                        type="button"
                         className={secondaryBtn}
                         disabled={busy}
                         onClick={() => {
@@ -249,6 +264,7 @@ export default function IdentityDocumentsManager() {
                         Rename
                       </button>
                       <button
+                        type="button"
                         className={secondaryBtn}
                         disabled={busy}
                         onClick={() => {
@@ -259,6 +275,7 @@ export default function IdentityDocumentsManager() {
                         Replace
                       </button>
                       <button
+                        type="button"
                         className={dangerBtn}
                         disabled={busy}
                         onClick={() => setConfirmingDeleteId(doc.fileId)}
@@ -295,6 +312,7 @@ export default function IdentityDocumentsManager() {
             {busy ? 'Saving…' : 'Drop a PDF, DOC, or DOCX here'}
           </p>
           <button
+            type="button"
             className="mt-1.5 rounded-btn bg-brand px-2.5 py-1 text-caption font-medium text-jungle transition-colors duration-150 hover:bg-brand-hover disabled:opacity-50"
             disabled={busy}
             onClick={() => addInputRef.current?.click()}
