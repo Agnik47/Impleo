@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Container, PrimaryButton } from './primitives.jsx';
-import { NAV_LINKS, CHROME_STORE_URL, GITHUB_URL } from '../lib/constants.js';
+import { Icon } from './Icon.jsx';
+import { NAV_LINKS, GITHUB_URL } from '../lib/constants.js';
 import { useSmoothScroll } from '../providers/SmoothScrollProvider.jsx';
 import { cn } from '../lib/utils.js';
 
@@ -48,15 +49,24 @@ export default function Nav() {
           ))}
         </nav>
 
+        {/* The store listing isn't live yet, so the nav ask points at the CTA
+            (clone + run locally) rather than a button that can't do anything. */}
         <div className="hidden items-center gap-3 md:flex">
           <a
             href={GITHUB_URL}
-            className="text-[14px] font-medium text-ink-secondary transition duration-150 hover:text-ink-primary"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-[14px] font-medium text-ink-secondary transition duration-150 hover:text-ink-primary"
           >
+            <Icon name="github" className="h-4 w-4" />
             GitHub
           </a>
-          <PrimaryButton href={CHROME_STORE_URL} className="px-4 py-2 text-[14px]">
-            Add to Chrome
+          <PrimaryButton
+            href="#cta"
+            onClick={(e) => go(e, '#cta')}
+            className="px-4 py-2 text-[14px]"
+          >
+            Get it — Free
           </PrimaryButton>
         </div>
 
@@ -86,8 +96,18 @@ export default function Nav() {
                 {label}
               </a>
             ))}
-            <PrimaryButton href={CHROME_STORE_URL} className="mt-2">
-              Add to Chrome — Free
+            <a
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => setOpen(false)}
+              className="inline-flex items-center gap-2 rounded-btn px-2 py-2 text-[15px] text-ink-secondary hover:bg-surface-card-hover hover:text-ink-primary"
+            >
+              <Icon name="github" className="h-4 w-4" />
+              GitHub
+            </a>
+            <PrimaryButton href="#cta" onClick={(e) => go(e, '#cta')} className="mt-2">
+              Get it — Free
             </PrimaryButton>
           </Container>
         </div>

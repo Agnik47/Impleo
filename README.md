@@ -325,6 +325,18 @@ impleo/
 
 ## Roadmap
 
+<div align="center">
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'pie1':'#28C94E','pie2':'#27332D','pieTitleTextSize':'16px','pieTitleTextColor':'#8B949E','pieSectionTextColor':'#0B0F0E','pieSectionTextSize':'15px','pieStrokeColor':'#0B0F0E','pieStrokeWidth':'2px','pieOuterStrokeColor':'#27332D','pieOpacity':'1','fontFamily':'Geist, Segoe UI, sans-serif'}}}%%
+pie showData
+    title Shipped vs planned
+    "Shipped" : 6
+    "Planned" : 6
+```
+
+</div>
+
 - [x] Human-in-the-loop review flow (Accept / Edit / Regenerate / Skip)
 - [x] Google Forms, Luma, and generic HTML extraction + fill
 - [x] Multi-provider support (Anthropic, Gemini, OpenAI, Groq)
@@ -369,16 +381,69 @@ See the [LICENSE](LICENSE) file for the full text.
 
 <br />
 
-<div align="center">
-
 ---
 
-**AI should accelerate applications, not replace judgment.**
+## Where Impleo is growing
 
-*Faster applications. Better stories. Still your voice.*
+Impleo isn't on the Chrome Web Store yet — but it's finished, open source, and free **today**. It just arrives by clone instead of by one click.
+
+<div align="center">
+
+```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Geist, Segoe UI, sans-serif','fontSize':'14px'}}}%%
+flowchart LR
+    S["<b>SEED</b><br/><br/>Built, working<br/>and MIT licensed"]
+    P["<b>SPROUT</b><br/><br/>Clone and run it locally<br/>— the whole extension, free"]
+    C["<b>CANOPY</b><br/><br/>One-click install from<br/>the Chrome Web Store"]
+
+    S ==> P -.-> C
+
+    classDef done fill:#0B0F0E,stroke:#28C94E,stroke-width:2px,color:#A3A3A3
+    classDef here fill:#111a12,stroke:#A6D91A,stroke-width:3px,color:#F5F5F5
+    classDef soon fill:#0B0F0E,stroke:#27332D,stroke-width:2px,color:#737373
+    class S done
+    class P here
+    class C soon
+```
+
+**You are here → Sprout.** The dashed edge is the part that isn't built yet.
+
+</div>
 
 <br />
 
-Made for anyone tired of typing the same answer twice.
+## Grow the jungle
+
+A jungle grows faster with more hands in it. Cheapest effort first — you don't need to open a pull request to help:
+
+| | Way in | What it does |
+|:---:|---|---|
+| **✦** | **[Drop a seed](https://github.com/Agnik47/Impleo)** | Star the repo. One click, and it puts Impleo in front of the next person hand-copying their résumé at 2am. |
+| **✳** | **[Flag a broken vine](https://github.com/Agnik47/Impleo/issues)** | Form platforms rewrite their DOM without warning. If an extractor stops biting on a page, open an issue with the URL — that report *is* the fix. |
+| **⑂** | **[Grow a new branch](https://github.com/Agnik47/Impleo/fork)** | Greenhouse, Lever, Workday and Typeform extractors are all still unclaimed above. Pick one and it's yours. |
+| **☰** | **[Clear the path](INSTALLATION.md)** | Setup notes, a sharper error message, a docs fix — anything that saves the next person the hour you just spent. |
+
+> **Three rules of the jungle.** Everything else is up for discussion, but these three aren't:
+> **1.** Never auto-submit — there's no code path that clicks submit, and there never will be.
+> **2.** Privacy is a hard constraint — no telemetry, no hosted storage, no endpoint the user didn't choose.
+> **3.** Keep it scoped — a small, reviewable diff with a clear rationale beats a large speculative one.
+
+<br />
+
+<div align="center">
+
+<img src="IMages/footer-jungle.svg" alt="Impleo — Faster applications. Better stories. Still your voice." width="100%" />
+
+<br />
+
+**[Install from Source](#-installation)** · **[Installation Guide](INSTALLATION.md)** · **[Architecture](#-architecture)** · **[Privacy](#-privacy)** · **[Contribute](#grow-the-jungle)**
+
+<br />
+
+<sub>Made for anyone tired of typing the same answer twice.</sub>
+
+<br />
+
+<sub>MIT licensed · Local-first, single-user · No tracking, no telemetry, no data selling</sub>
 
 </div>

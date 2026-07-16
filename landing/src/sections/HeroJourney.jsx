@@ -9,7 +9,7 @@ import { useMascotSection } from '../hooks/useMascotSection.js';
 import { useSmoothScroll } from '../providers/SmoothScrollProvider.jsx';
 import { applyParallax } from '../animations/parallax.js';
 import { EASE, DURATION } from '../motion/tokens.js';
-import { CHROME_STORE_URL, TRUST_TRIAD } from '../lib/constants.js';
+import { TRUST_TRIAD } from '../lib/constants.js';
 
 /*
  * Beat 1 — Hero Journey.
@@ -96,8 +96,19 @@ export default function HeroJourney() {
           </div>
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
+            {/* Not "Add to Chrome" — the store listing isn't live yet, and the
+                hero is the worst place to write a cheque the CTA can't cash.
+                This hands off to the clone-and-run block instead. */}
             <div data-hero-cta>
-              <PrimaryButton href={CHROME_STORE_URL}>Add to Chrome — Free</PrimaryButton>
+              <PrimaryButton
+                href="#cta"
+                onClick={(e) => {
+                  e.preventDefault();
+                  scrollTo('#cta');
+                }}
+              >
+                Run it locally — Free
+              </PrimaryButton>
             </div>
             <div data-hero-cta>
               <GhostButton

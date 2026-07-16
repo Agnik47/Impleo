@@ -20,6 +20,10 @@ const YELLOW = '#F5D000';
 
 // Per-state pose data: pupil offset (scanning direction), how open the eyes are
 // (eyelid), the mouth path, and whether to show an accessory.
+//
+// Any pose added here must ALSO be listed in MASCOT_STATES (providers/
+// MascotProvider.jsx) or the provider drops it, and given a caption in
+// PersistentMascot.jsx — otherwise the companion renders with an empty bubble.
 const POSE = {
   sleeping: { px: 0, py: 0, lid: 0.85, mouth: 'M78,132 Q100,140 122,132', accent: 'zzz' },
   discovering: { px: 2, py: -3, lid: 0, mouth: 'M84,130 Q100,138 116,130', accent: 'scan' },
@@ -27,6 +31,11 @@ const POSE = {
   approving: { px: 0, py: 1, lid: 0.35, mouth: 'M80,130 Q100,150 120,130', accent: 'check' },
   protecting: { px: 0, py: 0, lid: 0.15, mouth: 'M82,132 Q100,140 118,132', accent: 'shield' },
   celebrating: { px: 0, py: -1, lid: 0, mouth: 'M76,128 Q100,158 124,128', accent: 'spark' },
+  // Q&A — eyes up and off to one side (the universal "thinking it over" look),
+  // with a small, unsure mouth rather than the confident grin.
+  questioning: { px: 3, py: -3, lid: 0.05, mouth: 'M86,133 Q100,127 114,133', accent: 'question' },
+  // Contribute — looking down at the seedling it's tending, warm and settled.
+  planting: { px: -1, py: 3, lid: 0.3, mouth: 'M82,130 Q100,147 118,130', accent: 'seedling' },
 };
 
 export default function Chameleon({ state = 'sleeping', className = '', animated = true }) {
@@ -142,6 +151,24 @@ export default function Chameleon({ state = 'sleeping', className = '', animated
         <g stroke={LIME} strokeWidth="3" fill="none" opacity="0.85" className={animated ? 'animate-float-slow' : ''}>
           <circle cx="152" cy="66" r="11" />
           <path d="M160,74 l8,8" strokeLinecap="round" />
+        </g>
+      )}
+      {/* Two question marks drifting off the head — same trick as the sleeping
+          'zzz', so the two "thought bubble" states read as one family. */}
+      {pose.accent === 'question' && (
+        <g fill={YELLOW} className={animated ? 'animate-float-slow' : ''}>
+          <text x="146" y="58" fontSize="30" fontWeight="700">?</text>
+          <text x="40" y="72" fontSize="17" fontWeight="700" opacity="0.65">?</text>
+        </g>
+      )}
+      {/* A seedling by the chameleon's feet — placed right of the ground shadow
+          (which spans x≈54–146) and below the tail curl, so it sits in clear
+          space rather than on top of the character. */}
+      {pose.accent === 'seedling' && (
+        <g className={animated ? 'animate-float-slow' : ''}>
+          <path d="M156,175 v-23" stroke={GREEN_2} strokeWidth="4" strokeLinecap="round" fill="none" />
+          <path d="M156,158 q13,-3 15,-17 q-15,2 -15,17 z" fill={LIME} />
+          <path d="M156,165 q-11,-3 -13,-14 q13,2 13,14 z" fill={GREEN} />
         </g>
       )}
     </svg>

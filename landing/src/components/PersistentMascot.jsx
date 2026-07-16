@@ -4,7 +4,8 @@ import { useMascot } from '../providers/MascotProvider.jsx';
 import { useActiveSection } from '../hooks/useActiveSection.js';
 import { cn } from '../lib/utils.js';
 
-// Short caption per state — quiet storytelling, desktop only.
+// Short caption per state — quiet storytelling, desktop only. Every state in
+// MASCOT_STATES needs an entry here or the bubble renders empty.
 const CAPTION = {
   sleeping: 'zzz…',
   discovering: 'found a form',
@@ -12,6 +13,8 @@ const CAPTION = {
   approving: 'you approve',
   protecting: 'data stays local',
   celebrating: 'submitted!',
+  questioning: 'any questions?',
+  planting: 'grow it with me',
 };
 
 /*

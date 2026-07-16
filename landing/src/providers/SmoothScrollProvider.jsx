@@ -53,11 +53,24 @@ export function SmoothScrollProvider({ children }) {
     };
   }, [reduced]);
 
+  // -72 clears the 64px fixed nav (h-16) with a little breathing room. Both
+  // paths below MUST apply it: scrollIntoView has no offset option, and
+  // block:'start' parks the section's heading directly under the nav bar.
+  const NAV_OFFSET = -72;
+
   const scrollTo = (target, opts) => {
-    if (lenisRef.current) lenisRef.current.scrollTo(target, { offset: -72, ...opts });
-    else if (typeof target === 'string') {
-      document.querySelector(target)?.scrollIntoView({ behavior: 'auto', block: 'start' });
+    if (lenisRef.current) {
+      lenisRef.current.scrollTo(target, { offset: NAV_OFFSET, ...opts });
+      return;
     }
+    // Reduced motion: Lenis was never created, so scroll natively — by hand,
+    // not via scrollIntoView, so the nav offset still applies.
+    const el = typeof target === 'string' ? document.querySelector(target) : target;
+    if (!el) return;
+    window.scrollTo({
+      top: el.getBoundingClientRect().top + window.scrollY + NAV_OFFSET,
+      behavior: 'auto',
+    });
   };
 
   return (

@@ -8,7 +8,9 @@ import {
   PrivacyArchitecture,
   ProviderSelection,
   SuccessCelebration,
+  QuestionsAnswered,
   FinalCTA,
+  GrowTheJungle,
 } from './sections/index.js';
 
 /*
@@ -21,6 +23,9 @@ import {
  *   chaos → discovery → adaptation → review → privacy → success
  * and the mascot walks it: sleeping → discovering → filling → approving →
  * protecting → celebrating.
+ *
+ * GrowTheJungle is a coda, not a tenth beat — it plays after the ask, for the
+ * reader who kept scrolling once they'd already decided.
  *
  * Section order is load-bearing: it must stay in sync with SECTIONS in
  * lib/constants.js, which drives the nav, the chapter rail, and the mascot.
@@ -36,7 +41,9 @@ export default function App() {
       <PrivacyArchitecture />
       <ProviderSelection />
       <SuccessCelebration />
+      <QuestionsAnswered />
       <FinalCTA />
+      <GrowTheJungle />
     </StoryLayout>
   );
 }

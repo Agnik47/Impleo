@@ -9,6 +9,9 @@ const MascotContext = createContext({
   setMascotState: () => {},
 });
 
+// Whitelist — setMascotState silently ignores anything not listed here, so a
+// new pose in Chameleon.jsx MUST be registered in this array or it will never
+// reach the mascot. Keep in sync with POSE in assets/mascot/Chameleon.jsx.
 export const MASCOT_STATES = [
   'sleeping',
   'discovering',
@@ -16,6 +19,8 @@ export const MASCOT_STATES = [
   'approving',
   'protecting',
   'celebrating',
+  'questioning',
+  'planting',
 ];
 
 export function MascotProvider({ children }) {
