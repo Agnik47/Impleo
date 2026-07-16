@@ -323,35 +323,6 @@ impleo/
 
 <br />
 
-## Roadmap
-
-<div align="center">
-
-```mermaid
-%%{init: {'theme':'base','themeVariables':{'pie1':'#28C94E','pie2':'#27332D','pieTitleTextSize':'16px','pieTitleTextColor':'#8B949E','pieSectionTextColor':'#0B0F0E','pieSectionTextSize':'15px','pieStrokeColor':'#0B0F0E','pieStrokeWidth':'2px','pieOuterStrokeColor':'#27332D','pieOpacity':'1','fontFamily':'Geist, Segoe UI, sans-serif'}}}%%
-pie showData
-    title Shipped vs planned
-    "Shipped" : 6
-    "Planned" : 6
-```
-
-</div>
-
-- [x] Human-in-the-loop review flow (Accept / Edit / Regenerate / Skip)
-- [x] Google Forms, Luma, and generic HTML extraction + fill
-- [x] Multi-provider support (Anthropic, Gemini, OpenAI, Groq)
-- [x] Identity memory — canonical values reused across forms
-- [x] Learned answers — previously accepted answers matched by question
-- [x] Profile export / import for backup and portability
-- [ ] Greenhouse, Lever, Workday, and Typeform native extractors
-- [ ] Resume upload with automatic parsing (currently: paste resume text)
-- [ ] Team profiles and shared memories
-- [ ] Multi-model routing (auto-select provider per question type)
-- [ ] Analytics dashboard (local-only, applications tracked over time)
-- [ ] Mobile / cross-browser support
-
-<br />
-
 ## Contributing
 
 Impleo started as a personal tool and is built to stay small, boring, and correct rather than sprawling. Contributions are welcome, with a few ground rules:
