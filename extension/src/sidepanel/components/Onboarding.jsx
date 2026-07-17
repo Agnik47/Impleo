@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { exportProfile } from '../lib/importExport.js';
 import { testApiKey, saveSettings } from '../lib/settings.js';
 import { saveProfile } from '../lib/profile.js';
@@ -95,6 +95,16 @@ const KEY_HINTS = {
 
 export default function Onboarding({ initialProfile, initialSettings, onSaved }) {
   const [form, setForm] = useState(() => profileToFormState(initialProfile));
+
+  // initialProfile is a fresh object every time App.load() re-reads storage
+  // (e.g. right after an import) -- the lazy useState initializer above only
+  // runs once at mount, so without this the form silently keeps showing
+  // whatever was there when Onboarding first mounted. This re-derives form
+  // state whenever the prop actually changes, without touching storage or
+  // the save path.
+  useEffect(() => {
+    setForm(profileToFormState(initialProfile));
+  }, [initialProfile]);
 
   const providers = initialSettings?.providers ?? [];
   const savedKeyProviders = new Set(providers.filter((p) => p.hasKey).map((p) => p.id));
