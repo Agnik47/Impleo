@@ -45,11 +45,29 @@ const ICONS = {
   pencil: 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z',
   refresh: 'M21 12a9 9 0 1 1-3-6.7M21 3v6h-6',
   x: 'M18 6 6 18M6 6l12 12',
+  inject: 'M12 3v12M7 10l5 5 5-5M4 21h16',
   more: 'M12 6h.01M12 12h.01M12 18h.01',
   chevron: 'm6 9 6 6 6-6',
 };
 
-function ReviewCard({ question, review, fillResult, onAccept, onEdit, onSkip, onRegenerate, onToggleRemember }) {
+// 'dispatched' means the engine wrote the value but the control exposes nothing
+// to read back (a custom widget). That's a caveat the user should act on, not a
+// failure — showing it in red would train people to ignore red.
+const FILL_RESULT_STYLES = {
+  filled: 'text-brand',
+  dispatched: 'text-signature',
+};
+
+const FILL_RESULT_LABELS = {
+  filled: 'Injected',
+  dispatched: 'Injected — unconfirmed',
+  not_found: 'Field not found',
+  no_match: 'No matching option',
+  reverted: 'The page cleared it',
+  error: 'Failed',
+};
+
+function ReviewCard({ question, review, fillResult, onAccept, onEdit, onInject, onSkip, onRegenerate, onToggleRemember }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(review?.answer ?? '');
   const [instruction, setInstruction] = useState('');
@@ -188,8 +206,8 @@ function ReviewCard({ question, review, fillResult, onAccept, onEdit, onSkip, on
       )}
 
       {fillResult && (
-        <p className={`break-words text-caption ${fillResult.status === 'filled' ? 'text-brand' : 'text-red-400'}`}>
-          Fill: {fillResult.status}
+        <p className={`break-words text-caption ${FILL_RESULT_STYLES[fillResult.status] || 'text-red-400'}`}>
+          {FILL_RESULT_LABELS[fillResult.status] || fillResult.status}
           {fillResult.reason ? ` — ${fillResult.reason}` : ''}
         </p>
       )}
@@ -235,6 +253,18 @@ function ReviewCard({ question, review, fillResult, onAccept, onEdit, onSkip, on
             <span>Edit</span>
           </button>
         )}
+        {/* Writes this one field to the page immediately. Same engine as "Fill
+            approved" — see ReviewFlow's handleInjectField. Disabled with no
+            answer to inject, rather than firing and reporting a failure the
+            card could have predicted. */}
+        <button
+          onClick={() => onInject(question.id)}
+          disabled={review?.injecting || !answerText}
+          className={`${chipBtn} bg-signature/15 text-signature hover:bg-signature/25 disabled:opacity-40`}
+        >
+          <Icon path={ICONS.inject} />
+          <span>{review?.injecting ? 'Injecting…' : 'Inject'}</span>
+        </button>
         <button onClick={() => onSkip(question.id)} className={`${chipBtn} bg-surface-card-hover text-ink-secondary hover:text-ink-primary`}>
           <Icon path={ICONS.x} />
           <span>Skip</span>
@@ -262,7 +292,7 @@ function ReviewCard({ question, review, fillResult, onAccept, onEdit, onSkip, on
           </button>
           <input
             className="min-w-[8rem] flex-1 rounded-input border border-surface-border bg-surface-bg px-2 py-1 text-caption text-ink-primary placeholder:text-ink-muted focus:border-brand focus:outline-none"
-            placeholder="e.g. make it shorter"
+            placeholder="e.g. make it shorter, or say I do have Django experience"
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
           />

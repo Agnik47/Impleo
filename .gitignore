@@ -5,7 +5,6 @@ server/data/*.db-*
 .env
 test/
 docs/
-server/
 
 # Contains real PII (email/phone/LinkedIn) — kept locally only, never tracked.
 IMages/Profile Setup.png

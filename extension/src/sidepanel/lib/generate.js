@@ -26,8 +26,17 @@ async function getRecentQaHistory() {
 }
 
 // The no-fabrication instruction is the single highest-stakes line in this
-// file (AGENTS.md rule 7) — every other instruction here is negotiable, this
-// one isn't. Text is unchanged from the server version.
+// file (AGENTS.md rule 7) for AUTO-GENERATION — every other instruction there
+// is negotiable, this one isn't. Text is unchanged from the server version.
+//
+// `editing` flips the prompt into editor mode for USER-INSTRUCTED regeneration
+// only (AGENTS.md rule 7's documented exception): when the user is looking at an
+// answer and gives an explicit instruction, their instruction outranks the
+// profile — including a deliberate factual override — because the user has
+// decided it and owns the accuracy. This never fires on auto-generation
+// (generateAnswers passes it false), so the no-fabrication guarantee for the
+// unattended path is untouched. The bound: overriding on command is allowed;
+// padding with *unrequested* invented specifics is still forbidden even here.
 //
 // `contextText` is the RELEVANCE-SELECTED profile (see promptContext.js): the
 // cheap basics always, the expensive resume/writing-sample/projects only when
@@ -35,11 +44,26 @@ async function getRecentQaHistory() {
 // registry/canonical-key block — omitted for forms whose generative fields
 // are all clearly prose/choice (nothing identity-like to classify), saving
 // those calls the registry's tokens.
-function buildSystemPrompt(profile, identityMemory, contextText, includeClassification) {
+function buildSystemPrompt(profile, identityMemory, contextText, includeClassification, editing = false) {
   const memoryEntries = Object.entries(identityMemory || {});
   const memoryBlock = memoryEntries.length
     ? memoryEntries.map(([k, v]) => `- ${k}: ${v}`).join('\n')
     : '(none remembered yet)';
+
+  // Auto-generation: the profile is the ceiling, never to be exceeded by
+  // invention. Editor mode: the user's instruction is the ceiling, the profile
+  // demoted to a source of detail the instruction may override outright.
+  const integrityRule = editing
+    ? `EDITOR MODE — FOLLOW THE USER'S INSTRUCTION FIRST: You are revising an existing answer the user is looking at. Apply their instruction in this strict priority order:
+  1. The user's INSTRUCTION. It overrides everything below, including the PROFILE. If it tells you to assert, change, or contradict a fact the profile doesn't support, do it anyway — the user has decided this on purpose and is responsible for it. Never refuse an instruction because the profile disagrees.
+  2. The CURRENT ANSWER. Preserve whatever the instruction doesn't touch — this is an edit, not a fresh draft.
+  3. The PROFILE / REMEMBERED IDENTITY below — use it only to fill in details the instruction and current answer leave open.
+The one limit: do not volunteer NEW invented specifics (company names, metrics, dates, awards) the instruction didn't ask for. Carrying out the instruction is not fabrication; padding it with unrequested inventions is.`
+    : `CRITICAL RULE — DO NOT FABRICATE: Only use facts that are literally present in the PROFILE or REMEMBERED IDENTITY below. Never invent company names, metrics, dates, awards, job titles, or experience that isn't stated. If there isn't enough material to answer specifically, write a genuine but more general answer rather than making up specifics. This rule is more important than sounding impressive.`;
+
+  const instructionBullet = editing
+    ? `- The "instruction" field is the user's explicit command for this revision — apply it fully per EDITOR MODE above, including any factual change it directs. The "currentAnswer" field is the text you are revising.`
+    : `- If the input includes an "instruction" field, apply it to how you write the answer (tone, length, emphasis) without violating the no-fabrication rule above.`;
 
   const classificationBlock = includeClassification
     ? `
@@ -57,7 +81,7 @@ For every question, set "canonicalKey" to null (no identity classification is ne
 
   return `You are helping ${profile.personal?.name || 'the applicant'} fill out an application form by drafting answers in their own voice.
 
-CRITICAL RULE — DO NOT FABRICATE: Only use facts that are literally present in the PROFILE or REMEMBERED IDENTITY below. Never invent company names, metrics, dates, awards, job titles, or experience that isn't stated. If there isn't enough material to answer specifically, write a genuine but more general answer rather than making up specifics. This rule is more important than sounding impressive.
+${integrityRule}
 
 PROFILE:
 ${contextText}
@@ -72,7 +96,7 @@ Answering rules:
 - fieldType "checkbox" (multi-select): the answer must be an array of one or more strings, each copied verbatim from "options".
 - Static personal-info questions (name, email, phone, location) should be copied verbatim from the profile, not paraphrased.
 - Set "confidence" to "high" only when the profile/remembered identity has solid, specific grounding for that answer; "medium" for a reasonable but more general answer; "low" when there is little relevant material and the answer is necessarily generic.
-- If the input includes an "instruction" field, apply it to how you write the answer (tone, length, emphasis) without violating the no-fabrication rule above.
+${instructionBullet}
 
 Respond with ONLY a raw JSON array, no markdown code fences, no commentary: [{"id": "...", "canonicalKey": "..."|null, "answer": ..., "confidence": "high"|"medium"|"low"}, ...] — one entry per question given, in the same order, using the exact "id" values provided.`;
 }
@@ -119,8 +143,16 @@ function resolveCanonicalKey(aiAnswer, localMatch) {
 // Reconciles the AI's per-field output with the local match + remembered
 // identity store, for GENERATIVE fields only. A remembered value for the final
 // key is injected verbatim so reuse never depends on the model echoing it.
-function mergeAnswer(aiAnswer, localMatch, identityMemory) {
+//
+// `skipMemoryOverride` is set only by user-instructed regeneration: the whole
+// point there is to change the answer, so silently replacing the model's revised
+// text with the old remembered value would defeat the instruction (this is the
+// second, JS-side override the diagnosis flagged). The canonicalKey is still
+// resolved — the Remember checkbox and existingMemoryValue still work — only the
+// answer-clobbering branch is bypassed.
+function mergeAnswer(aiAnswer, localMatch, identityMemory, { skipMemoryOverride = false } = {}) {
   const { canonicalKey, classificationSource } = resolveCanonicalKey(aiAnswer, localMatch);
+  const hasMemory = canonicalKey && Object.prototype.hasOwnProperty.call(identityMemory, canonicalKey);
 
   const base = {
     id: aiAnswer?.id,
@@ -130,16 +162,17 @@ function mergeAnswer(aiAnswer, localMatch, identityMemory) {
     answer: aiAnswer?.answer ?? null,
     confidence: aiAnswer?.confidence ?? 'low',
     fromMemory: false,
-    existingMemoryValue: null,
+    // Still surfaced when skipping the override, so the card can offer "update
+    // the remembered value to this" rather than hiding that a key exists.
+    existingMemoryValue: hasMemory ? identityMemory[canonicalKey] : null,
   };
 
-  if (canonicalKey && Object.prototype.hasOwnProperty.call(identityMemory, canonicalKey)) {
+  if (hasMemory && !skipMemoryOverride) {
     return {
       ...base,
       answer: identityMemory[canonicalKey],
       confidence: 'high',
       fromMemory: true,
-      existingMemoryValue: identityMemory[canonicalKey],
     };
   }
   return base;
@@ -279,13 +312,27 @@ export async function generateAnswers(formSchema) {
   }
 }
 
-export async function regenerateAnswer(question, instruction) {
+export async function regenerateAnswer(question, instruction, currentAnswer = null) {
   if (!question || typeof question !== 'object' || !question.id) {
     throw new Error('question is required');
   }
 
   const { active, profile } = await requireProviderAndProfile();
   const identityMemory = await getIdentityMemoryMap();
+
+  // An explicit instruction turns regenerate into an EDIT: the model gets the
+  // text on screen as "currentAnswer" (so "change it" has a referent) and the
+  // prompt switches to editor mode where the instruction outranks the profile.
+  // A bare regenerate (no instruction) stays a cold re-roll — the user just
+  // wants a different answer, not an edit of this one — so currentAnswer is
+  // withheld to avoid the model simply echoing it back.
+  const hasInstruction = Boolean(instruction && String(instruction).trim());
+  const currentAnswerText =
+    hasInstruction && currentAnswer != null
+      ? Array.isArray(currentAnswer)
+        ? currentAnswer.join(', ')
+        : String(currentAnswer)
+      : null;
 
   // Regenerate is user-initiated ("give me another answer", possibly with an
   // instruction), so it always goes to the model — but with the same
@@ -303,14 +350,18 @@ export async function regenerateAnswer(question, instruction) {
 
   const withholdHint =
     localMatch && localMatch.confidence === 'medium' && isRiskClusterKey(localMatch.canonicalKey);
-  const annotatedQuestion =
-    localMatch && !withholdHint ? { ...question, canonicalKey: localMatch.canonicalKey } : question;
+  const annotatedQuestion = {
+    ...(localMatch && !withholdHint ? { ...question, canonicalKey: localMatch.canonicalKey } : question),
+    // Bound to the question itself, not left a loose sibling of formSchema, so
+    // the model can't mistake which field the current answer belongs to.
+    ...(currentAnswerText != null ? { currentAnswer: currentAnswerText } : {}),
+  };
 
-  const systemPrompt = buildSystemPrompt(profile, identityMemory, profileText, includeClassification);
+  const systemPrompt = buildSystemPrompt(profile, identityMemory, profileText, includeClassification, hasInstruction);
   const userContent = JSON.stringify({
     formSchema: [annotatedQuestion],
     recentQaHistory: history,
-    ...(instruction ? { instruction } : {}),
+    ...(hasInstruction ? { instruction } : {}),
   });
   const maxTokens = computeMaxTokens(1);
 
@@ -337,7 +388,9 @@ export async function regenerateAnswer(question, instruction) {
       completionTokens: estimateTokens(text),
     });
 
-    return { answer: mergeAnswer(answers[0], localMatch, identityMemory) };
+    return {
+      answer: mergeAnswer(answers[0], localMatch, identityMemory, { skipMemoryOverride: hasInstruction }),
+    };
   } catch (err) {
     rethrowGenerationError(err);
   }

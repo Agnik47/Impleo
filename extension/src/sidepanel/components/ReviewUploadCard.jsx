@@ -47,6 +47,12 @@ function UploadIcon({ className = 'h-4 w-4' }) {
 
 function ReviewUploadCard({ field, review, documents, onSelect, onApprove, onSkip, onAddDocument }) {
   const [adding, setAdding] = useState(false);
+  // The file list is collapsed behind "Change file" by default. With one stored
+  // resume the list was pure noise; with several it pushed the approve button
+  // off-screen on a side panel this narrow, which is what made "which file is it
+  // about to send?" hard to answer at a glance — the one question this card
+  // exists to answer.
+  const [choosing, setChoosing] = useState(false);
   const fileInputRef = useRef(null);
 
   const status = review?.status ?? 'pending';
@@ -54,6 +60,13 @@ function ReviewUploadCard({ field, review, documents, onSelect, onApprove, onSki
   const recommendation = review?.recommendation ?? null;
   const suggestedFileId = recommendation?.suggestedFileId ?? null;
   const atLimit = documents.length >= MAX_DOCUMENTS;
+  const selectedDoc = documents.find((d) => d.fileId === selectedFileId) ?? null;
+  // Which document to name on a field Impleo can't attach to (a Drive picker), so
+  // the manual upload is a known file, not a guess. Prefer the recommendation, then
+  // whatever's selected (loadUploadContext preselects the recommendation or the
+  // newest doc), then the first stored doc — anything beats naming nothing.
+  const manualPickDoc =
+    documents.find((d) => d.fileId === suggestedFileId) ?? selectedDoc ?? documents[0] ?? null;
 
   const borderClass =
     status === 'uploaded'
@@ -68,7 +81,10 @@ function ReviewUploadCard({ field, review, documents, onSelect, onApprove, onSki
     if (!file) return;
     setAdding(true);
     try {
+      // Selects the new file for this field but does NOT approve it, so this
+      // collapses to the same approval gate a manual pick lands on.
       await onAddDocument(field.id, file);
+      setChoosing(false);
     } finally {
       setAdding(false);
     }
@@ -99,22 +115,36 @@ function ReviewUploadCard({ field, review, documents, onSelect, onApprove, onSki
 
       {/* Fields we can see but genuinely cannot reach (Google Drive pickers). Telling
           the user which document to grab is still worth something; pretending we can
-          attach it would not be. */}
+          attach it would not be. So this names the file to upload by hand — with its
+          label, format, and size — rather than leaving them to guess which stored
+          document the form wants. */}
       {!field.injectable ? (
-        <p className="rounded-input border border-surface-border bg-surface-bg p-2 text-caption text-ink-secondary">
-          {field.reason || 'Impleo can’t attach files to this field.'} You’ll need to
-          attach it yourself.
-          {suggestedFileId && (
-            <>
-              {' '}
-              Suggested:{' '}
-              <span className="text-ink-primary">
-                {documents.find((d) => d.fileId === suggestedFileId)?.originalName}
-              </span>
-              .
-            </>
+        <div className="min-w-0 space-y-1.5 rounded-input border border-surface-border bg-surface-bg p-2">
+          <p className="text-caption text-ink-secondary">
+            {field.reason || 'Impleo can’t attach files to this field.'} You’ll need to attach it
+            yourself.
+          </p>
+          {manualPickDoc ? (
+            <div className="min-w-0 rounded border border-surface-border bg-surface-card p-1.5">
+              <p className="text-caption text-ink-muted">Upload this file</p>
+              <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
+                <span className="min-w-0 break-all text-caption font-medium text-ink-primary">
+                  {manualPickDoc.originalName}
+                </span>
+              </div>
+              <p className="mt-0.5 min-w-0 break-words text-caption text-ink-muted">
+                {manualPickDoc.userDefinedLabel} · {formatLabel(manualPickDoc)} ·{' '}
+                {formatBytes(manualPickDoc.size)}
+              </p>
+            </div>
+          ) : (
+            documents.length === 0 && (
+              <p className="text-caption text-ink-muted">
+                Add a resume in Settings and Impleo will tell you which one to use here.
+              </p>
+            )
           )}
-        </p>
+        </div>
       ) : documents.length === 0 ? (
         <div className="rounded-input border border-dashed border-surface-border bg-surface-bg p-2.5 text-center">
           <p className="text-caption text-ink-secondary">
@@ -131,61 +161,86 @@ function ReviewUploadCard({ field, review, documents, onSelect, onApprove, onSki
         </div>
       ) : (
         <>
-          {recommendation?.reason && (
+          {!choosing ? (
             <div className="min-w-0 rounded-input border border-surface-border bg-surface-bg p-2">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-caption font-medium text-ink-secondary">Reason</span>
-                {badge && (
-                  <span className={`rounded px-1.5 py-px text-caption font-medium ${badge.className}`}>
-                    {badge.text}
-                  </span>
-                )}
-              </div>
-              <p className="mt-0.5 min-w-0 break-words text-caption text-ink-secondary">
-                {recommendation.reason}
-              </p>
-            </div>
-          )}
-
-          <fieldset className="min-w-0 space-y-1" disabled={status === 'uploading'}>
-            <legend className="mb-1 text-caption text-ink-muted">Available files</legend>
-            {documents.map((doc) => {
-              const checked = selectedFileId === doc.fileId;
-              return (
-                <label
-                  key={doc.fileId}
-                  className={`flex min-w-0 cursor-pointer items-center gap-2 rounded-input border p-2 transition-colors duration-150 ${
-                    checked
-                      ? 'border-brand/50 bg-brand/10'
-                      : 'border-surface-border bg-surface-bg hover:bg-surface-card-hover'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    className="shrink-0 accent-brand"
-                    name={`impleo-upload-${field.id}`}
-                    checked={checked}
-                    onChange={() => onSelect(field.id, doc.fileId)}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                      <span className="min-w-0 break-all text-caption font-medium text-ink-primary">
-                        {doc.originalName}
+              <p className="text-caption text-ink-muted">Selected file</p>
+              {selectedDoc ? (
+                <>
+                  <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
+                    <span className="min-w-0 break-all text-caption font-medium text-ink-primary">
+                      {selectedDoc.originalName}
+                    </span>
+                    {badge && selectedDoc.fileId === suggestedFileId && (
+                      <span className={`shrink-0 rounded px-1.5 py-px text-caption font-medium ${badge.className}`}>
+                        {badge.text}
                       </span>
-                      {doc.fileId === suggestedFileId && (
-                        <span className="shrink-0 rounded bg-brand/15 px-1 py-px text-caption font-medium text-brand">
-                          Suggested
+                    )}
+                  </div>
+                  <p className="mt-0.5 min-w-0 break-words text-caption text-ink-muted">
+                    {selectedDoc.userDefinedLabel} · {formatLabel(selectedDoc)} · {formatBytes(selectedDoc.size)}
+                  </p>
+                  {/* Why this file, kept next to the file itself rather than in its own
+                      box: collapsed, the reason is only meaningful as a caption on the
+                      name it's justifying. */}
+                  {recommendation?.reason && selectedDoc.fileId === suggestedFileId && (
+                    <p className="mt-1 min-w-0 break-words text-caption text-ink-secondary">
+                      {recommendation.reason}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="mt-0.5 text-caption text-signature">
+                  No file selected yet — choose one to continue.
+                </p>
+              )}
+            </div>
+          ) : (
+            <fieldset className="min-w-0 space-y-1" disabled={status === 'uploading'}>
+              <legend className="mb-1 text-caption text-ink-muted">Choose a file</legend>
+              {documents.map((doc) => {
+                const checked = selectedFileId === doc.fileId;
+                return (
+                  <label
+                    key={doc.fileId}
+                    className={`flex min-w-0 cursor-pointer items-center gap-2 rounded-input border p-2 transition-colors duration-150 ${
+                      checked
+                        ? 'border-brand/50 bg-brand/10'
+                        : 'border-surface-border bg-surface-bg hover:bg-surface-card-hover'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      className="shrink-0 accent-brand"
+                      name={`impleo-upload-${field.id}`}
+                      checked={checked}
+                      onChange={() => {
+                        onSelect(field.id, doc.fileId);
+                        // Collapse straight back to the approval gate: picking a file
+                        // is the whole purpose of this list, so staying open would
+                        // leave the user to work out that they're now done choosing.
+                        setChoosing(false);
+                      }}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <span className="min-w-0 break-all text-caption font-medium text-ink-primary">
+                          {doc.originalName}
                         </span>
-                      )}
+                        {doc.fileId === suggestedFileId && (
+                          <span className="shrink-0 rounded bg-brand/15 px-1 py-px text-caption font-medium text-brand">
+                            Suggested
+                          </span>
+                        )}
+                      </span>
+                      <span className="mt-0.5 block text-caption text-ink-muted">
+                        {doc.userDefinedLabel} · {formatLabel(doc)} · {formatBytes(doc.size)}
+                      </span>
                     </span>
-                    <span className="mt-0.5 block text-caption text-ink-muted">
-                      {doc.userDefinedLabel} · {formatLabel(doc)} · {formatBytes(doc.size)}
-                    </span>
-                  </span>
-                </label>
-              );
-            })}
-          </fieldset>
+                  </label>
+                );
+              })}
+            </fieldset>
+          )}
         </>
       )}
 
@@ -204,28 +259,52 @@ function ReviewUploadCard({ field, review, documents, onSelect, onApprove, onSki
 
       {field.injectable && documents.length > 0 && status !== 'uploaded' && status !== 'skipped' && (
         <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => onApprove(field.id)}
-            disabled={!selectedFileId || status === 'uploading'}
-            className={`${chipBtn} min-w-[8rem] flex-1 justify-center bg-brand text-jungle hover:bg-brand-hover hover:shadow-glow disabled:opacity-40 disabled:shadow-none`}
-          >
-            {status === 'uploading' ? 'Attaching…' : 'Approve upload'}
-          </button>
-          <button
-            onClick={() => onSkip(field.id)}
-            disabled={status === 'uploading'}
-            className={`${chipBtn} border border-surface-border text-ink-secondary hover:bg-surface-card-hover hover:text-ink-primary disabled:opacity-40`}
-          >
-            Skip
-          </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={adding || atLimit || status === 'uploading'}
-            title={atLimit ? `You can store up to ${MAX_DOCUMENTS} identity documents.` : undefined}
-            className={`${chipBtn} border border-surface-border text-ink-secondary hover:bg-surface-card-hover hover:text-ink-primary disabled:opacity-40`}
-          >
-            {adding ? 'Saving…' : 'Upload new'}
-          </button>
+          {choosing ? (
+            <>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={adding || atLimit || status === 'uploading'}
+                title={atLimit ? `You can store up to ${MAX_DOCUMENTS} identity documents.` : undefined}
+                className={`${chipBtn} min-w-[8rem] flex-1 justify-center border border-surface-border text-ink-secondary hover:bg-surface-card-hover hover:text-ink-primary disabled:opacity-40`}
+              >
+                {adding ? 'Saving…' : 'Upload new'}
+              </button>
+              <button
+                onClick={() => setChoosing(false)}
+                className={`${chipBtn} border border-surface-border text-ink-secondary hover:bg-surface-card-hover hover:text-ink-primary`}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setChoosing(true)}
+                disabled={status === 'uploading'}
+                className={`${chipBtn} border border-surface-border text-ink-secondary hover:bg-surface-card-hover hover:text-ink-primary disabled:opacity-40`}
+              >
+                Change file
+              </button>
+              {/* The approval gate. Renamed from "Approve upload" to match the verb
+                  the rest of the review now uses for "put this on the page" — but it
+                  is the same gate, with the same rule: nothing reaches the page until
+                  this specific button is clicked for this specific field. */}
+              <button
+                onClick={() => onApprove(field.id)}
+                disabled={!selectedFileId || status === 'uploading'}
+                className={`${chipBtn} min-w-[7rem] flex-1 justify-center bg-brand text-jungle hover:bg-brand-hover hover:shadow-glow disabled:opacity-40 disabled:shadow-none`}
+              >
+                {status === 'uploading' ? 'Attaching…' : 'Inject file'}
+              </button>
+              <button
+                onClick={() => onSkip(field.id)}
+                disabled={status === 'uploading'}
+                className={`${chipBtn} border border-surface-border text-ink-secondary hover:bg-surface-card-hover hover:text-ink-primary disabled:opacity-40`}
+              >
+                Skip
+              </button>
+            </>
+          )}
         </div>
       )}
 

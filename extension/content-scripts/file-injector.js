@@ -1,14 +1,25 @@
 // Self-contained by design: see generic-extractor.js's top comment.
 //
-// Runs ONLY after the user clicks "Approve upload" in the review panel. Nothing in
+// Runs ONLY after the user clicks "Inject file" in the review panel. Nothing in
 // this file decides anything — it is handed one document and one field and does
 // exactly that, once. There is no scan, no loop over fields, and no code path that
 // reaches a submit button (AGENTS.md rule 1).
 //
-// Why bytes arrive as base64: chrome.scripting.executeScript args must be
-// JSON-serializable. A File/Blob cannot be structured-cloned across that boundary,
-// so the side panel base64s the document and the File is reconstructed here, inside
-// the page's world, where it must exist anyway for DataTransfer to accept it.
+// RUNS IN THE PAGE'S MAIN WORLD (see ReviewFlow.handleApproveUpload's
+// executeScript call, which sets world: 'MAIN'). This matters: a synthetic
+// `drop` event dispatched from the extension's ISOLATED world carries a
+// DataTransfer whose `.files` the page's own drop handler cannot read across the
+// world boundary — so every drag-and-drop uploader (react-dropzone, Greenhouse,
+// Ashby, Lever's styled widgets) silently ignored the file. That was the whole
+// "detects and recommends but never attaches" bug for those platforms. In the
+// MAIN world the DragEvent and its files are the page's own objects, so its
+// handler sees them. Setting `input.files` works in either world (the input is a
+// shared DOM node), so nothing on the native-input path regresses.
+//
+// Why bytes arrive as base64: executeScript args must be JSON-serializable. A
+// File/Blob cannot be structured-cloned across that boundary, so the side panel
+// base64s the document and the File is reconstructed here, where it must exist
+// anyway for DataTransfer to accept it.
 export function injectDocumentIntoField(selector, descriptor) {
   const { contentBase64, mimeType, fileName, strategy } = descriptor;
 
@@ -42,77 +53,94 @@ export function injectDocumentIntoField(selector, descriptor) {
     return { status: 'error', reason: `Could not rebuild the file in the page: ${err.message}` };
   }
 
+  // A fresh DataTransfer per use: the same one can't be reused across an input
+  // assignment and a drop, and a drop handler may consume/neuter it.
   function buildTransfer() {
     const dt = new DataTransfer();
     dt.items.add(file);
     return dt;
   }
 
-  try {
-    if (strategy === 'drop') {
-      // No input exists — the widget listens for drop events (react-dropzone and
-      // friends). The full dragenter -> dragover -> drop sequence matters: libraries
-      // commonly ignore a drop they never saw a dragover for.
-      const dt = buildTransfer();
-      for (const type of ['dragenter', 'dragover', 'drop']) {
-        host.dispatchEvent(
-          new DragEvent(type, { bubbles: true, cancelable: true, composed: true, dataTransfer: dt })
-        );
+  // The full dragenter -> dragover -> drop sequence: libraries commonly ignore a
+  // drop they never saw a dragover for. `composed` lets it cross shadow-DOM
+  // boundaries some styled uploaders use.
+  function fireDropSequence(target) {
+    for (const type of ['dragenter', 'dragover', 'drop']) {
+      target.dispatchEvent(
+        new DragEvent(type, { bubbles: true, cancelable: true, composed: true, dataTransfer: buildTransfer() })
+      );
+    }
+  }
+
+  // The dropzone a hidden input lives inside — where the page's own drag handler
+  // is bound. Walk up a bounded number of levels for a container that looks like a
+  // dropzone or actually has a drop handler; fall back to the input's parent.
+  function findDropzone(input) {
+    let node = input.parentElement;
+    let hops = 0;
+    while (node && hops < 6) {
+      const cls = (node.className && String(node.className)) || '';
+      if (/dropzone|drop-zone|file-?upload|uploader/i.test(cls) || typeof node.ondrop === 'function') {
+        return node;
       }
-      // Genuinely unverifiable: a dropzone exposes no state to read back, so unlike
-      // the input path there is nothing to confirm against. Say so rather than
-      // reporting a success that was never checked.
+      node = node.parentElement;
+      hops += 1;
+    }
+    return input.parentElement || input;
+  }
+
+  function inputHoldsOurFile(input) {
+    return Boolean(input.files && input.files.length > 0 && input.files[0].name === fileName);
+  }
+
+  try {
+    // The selector may point at the input itself, or at a wrapper whose input is
+    // nested (a styled uploader), or at a pure dropzone with no input at all.
+    const input =
+      host.tagName === 'INPUT' && host.type === 'file' ? host : host.querySelector('input[type="file"]');
+
+    // No input anywhere — a genuine drag-only widget. Dispatching the drop is the
+    // only route, and there's nothing to read back, so this is honestly reported
+    // as unverified rather than as a confirmed attach.
+    if (!input) {
+      fireDropSequence(host);
       return {
         status: 'dispatched',
         reason: 'Sent the file to the drop area. Check the page to confirm it appeared.',
       };
     }
 
-    // Native input path. The selector may point at the input itself, or at a wrapper
-    // whose input is nested (a styled uploader).
-    const input =
-      host.tagName === 'INPUT' && host.type === 'file' ? host : host.querySelector('input[type="file"]');
-    if (!input) {
-      return { status: 'error', reason: 'No file input found for that field.' };
-    }
-
-    const dt = buildTransfer();
-    // Assigning .files is the supported way to populate a file input programmatically.
-    // Note this is NOT the setNativeValue dance generic-filler.js needs for text
-    // inputs: React overrides the `value` property descriptor, but not `files` — and
-    // a file input's `value` can only ever be set to '' by script. So a plain
-    // assignment here is correct, and the prototype-setter trick would not help.
-    input.files = dt.files;
-
-    // React/Vue/Angular all listen for these; `input` first, then `change`, matching
-    // the order a real user selection produces.
+    // Native-input path — the reliable one. Assigning `.files` is the supported way
+    // to populate a file input programmatically. This is NOT the setNativeValue
+    // dance text inputs need: React overrides the `value` descriptor, but not
+    // `files` — and a file input's `value` can only ever be set to '' by script — so
+    // a plain assignment is correct here and the prototype-setter trick wouldn't help.
+    input.files = buildTransfer().files;
+    // `input` then `change`, the order a real user selection produces. react-dropzone
+    // and every controlled uploader listen for `change` on their hidden input.
     input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
     input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
-
-    // Some wrappers only bind their handler to the dropzone, not the hidden input.
-    // Sending the drop as well costs nothing and covers uploaders that hide an input
-    // purely for accessibility while doing the real work on drop.
-    if (host !== input) {
-      const dropTransfer = buildTransfer();
-      for (const type of ['dragenter', 'dragover', 'drop']) {
-        host.dispatchEvent(
-          new DragEvent(type, { bubbles: true, cancelable: true, composed: true, dataTransfer: dropTransfer })
-        );
-      }
-    }
 
     // Read the field back rather than trusting the dispatch. A framework that
     // remounted the input mid-handler leaves it empty, and reporting "filled" then
     // would be exactly the lie that costs someone a submitted application.
-    const attached = input.files && input.files.length > 0 && input.files[0].name === fileName;
-    if (!attached) {
-      return {
-        status: 'error',
-        reason: 'The page cleared the file right after it was attached. Try attaching it manually.',
-      };
+    if (inputHoldsOurFile(input)) {
+      return { status: 'filled', fileName };
     }
 
-    return { status: 'filled', fileName };
+    // The input didn't retain the file — the widget cleared it, or it only reacts to
+    // a drop on its dropzone, not to a change on the hidden input. Try the drop as a
+    // fallback. Gated on the input path having FAILED so a working uploader is never
+    // sent the file twice (some dropzones append, which would attach two copies).
+    fireDropSequence(findDropzone(input));
+    if (inputHoldsOurFile(input)) {
+      return { status: 'filled', fileName };
+    }
+
+    return {
+      status: 'dispatched',
+      reason: 'The input cleared the file, so Impleo sent it as a drop instead. Check the page to confirm it attached.',
+    };
   } catch (err) {
     return { status: 'error', reason: err.message };
   }

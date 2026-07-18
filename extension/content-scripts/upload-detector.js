@@ -128,6 +128,17 @@ export function detectUploadFields() {
     return el.isConnected;
   }
 
+  // Clear stamps from any previous scan BEFORE this one starts. `counter` restarts
+  // at 1 every run, so a leftover `impleo-upload-1` from a prior scan would collide
+  // with this scan's first field — and file-injector's querySelector returns the
+  // FIRST match in document order, which would be the stale element, attaching the
+  // resume to the wrong field. Stale stamps also make passes 2/3 skip real fields
+  // (they treat an already-stamped ancestor as claimed). A fresh scan owns the
+  // stamps outright.
+  for (const stale of Array.from(document.querySelectorAll('[data-impleo-upload-id]'))) {
+    stale.removeAttribute('data-impleo-upload-id');
+  }
+
   let counter = 0;
   function stamp(el) {
     counter += 1;

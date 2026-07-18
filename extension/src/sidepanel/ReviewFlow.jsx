@@ -15,10 +15,10 @@ import {
   regenerateAnswer,
 } from './lib/generate.js';
 import ReviewCard from './components/ReviewCard.jsx';
-import { extractGoogleForm, fillGoogleForm } from '../../content-scripts/google-forms.js';
-import { extractLumaForm, fillLumaForm } from '../../content-scripts/luma.js';
+import { extractGoogleForm } from '../../content-scripts/google-forms.js';
+import { extractLumaForm } from '../../content-scripts/luma.js';
 import { extractGenericForm } from '../../content-scripts/generic-extractor.js';
-import { fillGenericForm } from '../../content-scripts/generic-filler.js';
+import { injectFields } from '../../content-scripts/injection-engine.js';
 import { detectUploadFields } from '../../content-scripts/upload-detector.js';
 import { injectDocumentIntoField } from '../../content-scripts/file-injector.js';
 import ReviewUploadCard from './components/ReviewUploadCard.jsx';
@@ -41,11 +41,30 @@ const EXTRACTORS = {
   generic: extractGenericForm,
 };
 
-const FILLERS = {
-  'google-forms': fillGoogleForm,
-  luma: fillLumaForm,
-  generic: fillGenericForm,
-};
+// There is no FILLERS map any more. The three per-platform fillers it used to
+// dispatch to were three copies of the same logic that had drifted apart — see
+// injection-engine.js's header. Platform is now just an argument to the one
+// engine, which is what "do not build multiple injection systems" means in
+// practice.
+
+// The one shape both "Fill approved" and per-field "Inject" hand to the engine.
+// Defined once so the two paths cannot drift the way the fillers did.
+function toInjectableField(question, review) {
+  return {
+    id: question.id,
+    selector: question.selector,
+    fieldType: question.fieldType,
+    value: review.answer,
+    // Carried so the engine can re-locate the field by its visible label when a
+    // re-render has wiped the stamped selector — and re-stamp it once it has.
+    questionText: question.questionText,
+  };
+}
+
+// Statuses the engine reports for a write that actually landed. 'dispatched'
+// means written but unverifiable (a custom widget with no readable value), which
+// is a caveat rather than a failure — it must not be shown in red.
+const SUCCESS_FILL_STATUSES = new Set(['filled', 'dispatched']);
 
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -112,7 +131,19 @@ export default function ReviewFlow() {
             setPhase(stored.phase === 'filling' ? 'reviewing' : stored.phase || 'reviewing');
             setPlatform(stored.platform ?? null);
             setFormSchema(stored.formSchema ?? []);
-            setReviewState(stored.reviewState ?? {});
+            // A persisted `injecting`/`regenerating` is a lie by the time we read it —
+            // the panel closed mid-flight, so the executeScript/model result was never
+            // observed. Restoring either as true strands the card with a permanently
+            // disabled button. Same reasoning as the uploadReview 'uploading' coercion
+            // below; `regenerating` had this bug already, `injecting` would have
+            // inherited it.
+            const restoredReview = stored.reviewState ?? {};
+            for (const [id, entry] of Object.entries(restoredReview)) {
+              if (entry?.injecting || entry?.regenerating) {
+                restoredReview[id] = { ...entry, injecting: false, regenerating: false };
+              }
+            }
+            setReviewState(restoredReview);
             setFillReport(stored.fillReport ?? null);
             setErrorMessage(stored.errorMessage ?? null);
             setUploadFields(stored.uploadFields ?? []);
@@ -471,7 +502,7 @@ export default function ReviewFlow() {
   );
 
   // THE approval gate. This is the only function in the codebase that can put a file
-  // on a page, it runs only from a click on "Approve upload", and it injects exactly
+  // on a page, it runs only from a click on "Inject file", and it injects exactly
   // the one document selected on exactly the one field approved. It never loops over
   // fields, and nothing schedules it.
   const handleApproveUpload = useCallback(
@@ -491,6 +522,15 @@ export default function ReviewFlow() {
 
         const [{ result }] = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
+          // MAIN world, unlike every other executeScript call here. A synthetic
+          // drop event dispatched from the isolated world carries files the page's
+          // own drop handler can't read across the world boundary, so drag-and-drop
+          // uploaders (react-dropzone, Greenhouse/Ashby/Lever widgets) silently
+          // dropped the file. In the page's own world the event and its files are
+          // the page's objects. See file-injector.js's header. Detection stays
+          // isolated — it only reads the DOM, and the stamped attribute it leaves
+          // is visible from both worlds.
+          world: 'MAIN',
           func: injectDocumentIntoField,
           args: [
             field.selector,
@@ -542,6 +582,11 @@ export default function ReviewFlow() {
     async (question, instruction) => {
       updateReview(question.id, { regenerating: true });
       try {
+        // The answer currently on screen — what the user's instruction refers to
+        // ("change it", "say yes instead"). Read from the ref so an in-flight edit
+        // isn't missed; passed so regenerate edits this text rather than cold
+        // re-rolling with no referent.
+        const currentAnswer = reviewStateRef.current[question.id]?.answer ?? null;
         const { answer } = await regenerateAnswer(
           {
             id: question.id,
@@ -550,7 +595,8 @@ export default function ReviewFlow() {
             options: question.options,
             required: question.required,
           },
-          instruction
+          instruction,
+          currentAnswer
         );
         const canonicalKey = answer.canonicalKey ?? null;
         const fromMemory = Boolean(answer.fromMemory);
@@ -574,6 +620,63 @@ export default function ReviewFlow() {
     [updateReview]
   );
 
+  // Per-field Inject. Same engine, same field shape, same report shape as "Fill
+  // approved" — the only differences are that it passes one field instead of N
+  // and asks the engine to scroll it into view.
+  //
+  // This does NOT bypass review (AGENTS.md's non-bypassable review step): the
+  // user is looking at the answer on the card when they click it, which is the
+  // review. What it bypasses is the *round trip* — scrolling back to the top to
+  // click a global button — which is the friction the bug report is about.
+  //
+  // A successful inject therefore counts as an approval, exactly as if Accept had
+  // been clicked: the field is marked accepted and the answer is learned. Leaving
+  // it 'pending' would be worse than cosmetic — a later "Fill approved" would skip
+  // the field the user had just personally put on the page.
+  const handleInjectField = useCallback(
+    async (id) => {
+      const question = formSchemaRef.current.find((q) => q.id === id);
+      const review = reviewStateRef.current[id];
+      if (!question || !review) return;
+
+      const answerText = answerToText(review.answer).trim();
+      if (!answerText) {
+        setErrorMessage(`There's no answer to inject for "${question.questionText}" yet.`);
+        return;
+      }
+
+      updateReview(id, { injecting: true });
+      setErrorMessage(null);
+      try {
+        const tab = await getActiveTab();
+        const [{ result }] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: injectFields,
+          args: [{ platform, fields: [toInjectableField(question, review)], scrollIntoView: true }],
+        });
+
+        const outcome = result?.[0] ?? { id, status: 'error', reason: 'The page returned no result.' };
+        // Merged into fillReport rather than kept in a parallel field, so a card
+        // has exactly one place to read its outcome from and the two paths can't
+        // disagree about what happened to a field.
+        setFillReport((prev) => [...(prev ?? []).filter((r) => r.id !== id), outcome]);
+
+        if (SUCCESS_FILL_STATUSES.has(outcome.status) && review.status !== 'accepted' && review.status !== 'edited') {
+          updateReview(id, { status: 'accepted' });
+          learnAnswer(id, review.answer, 'user_accept');
+        }
+      } catch (err) {
+        setFillReport((prev) => [
+          ...(prev ?? []).filter((r) => r.id !== id),
+          { id, status: 'error', reason: err.message },
+        ]);
+      } finally {
+        updateReview(id, { injecting: false });
+      }
+    },
+    [platform, updateReview, learnAnswer]
+  );
+
   async function handleFill() {
     setPhase('filling');
     setErrorMessage(null);
@@ -583,20 +686,15 @@ export default function ReviewFlow() {
         const r = reviewState[q.id];
         return r && (r.status === 'accepted' || r.status === 'edited');
       });
-      const approvedAnswers = approved.map((q) => ({
-        id: q.id,
-        selector: q.selector,
-        fieldType: q.fieldType,
-        value: reviewState[q.id].answer,
-        // Carried so the fillers can re-locate a field by its visible label
-        // if the page re-rendered and the stamped selector went stale.
-        questionText: q.questionText,
-      }));
+      const approvedAnswers = approved.map((q) => toInjectableField(q, reviewState[q.id]));
 
       const [{ result: report }] = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        func: FILLERS[platform],
-        args: [approvedAnswers],
+        func: injectFields,
+        // No scrollIntoView on a bulk fill: it would yank the page around once
+        // per field while the user watches. Per-field Inject sets it, because
+        // there the user asked about exactly one field and wants to see it.
+        args: [{ platform, fields: approvedAnswers, scrollIntoView: false }],
       });
 
       setFillReport(report);
@@ -729,15 +827,27 @@ export default function ReviewFlow() {
     [uploadFields, uploadReview]
   );
 
-  // Purely a read of data handleFill already produces — not a new state path.
-  // Gates CompletionState: a celebration only when nothing in the fill
-  // actually failed, not on "a fill was attempted."
-  const allFilledSuccessfully = useMemo(
-    () =>
-      Boolean(fillReport && fillReport.length > 0 && fillReport.every((r) => r.status === 'filled')) &&
-      uploadsResolved,
-    [fillReport, uploadsResolved]
-  );
+  // Gates CompletionState: a celebration only when every approved field actually
+  // landed, not on "a fill was attempted."
+  //
+  // Checked against the approved fields rather than against fillReport's own
+  // entries. Those were equivalent when only handleFill could write a report —
+  // it always reported on the whole approved batch at once. Per-field Inject
+  // breaks that assumption: it appends a single result, and "every entry in the
+  // report succeeded" would then be trivially true after one successful Inject,
+  // congratulating the user on a form they've barely started.
+  const allFilledSuccessfully = useMemo(() => {
+    const approved = formSchema.filter((q) => {
+      const r = reviewState[q.id];
+      return r && (r.status === 'accepted' || r.status === 'edited');
+    });
+    if (approved.length === 0 || !fillReport || fillReport.length === 0) return false;
+    const everyApprovedLanded = approved.every((q) => {
+      const result = fillReport.find((r) => r.id === q.id);
+      return result && SUCCESS_FILL_STATUSES.has(result.status);
+    });
+    return everyApprovedLanded && uploadsResolved;
+  }, [formSchema, reviewState, fillReport, uploadsResolved]);
 
   return (
     <div className="relative mx-auto w-full min-w-0 max-w-[500px] space-y-3 p-3 sm:p-4">
@@ -804,6 +914,7 @@ export default function ReviewFlow() {
                     fillResult={fillReport?.find((r) => r.id === q.id)}
                     onAccept={handleAccept}
                     onEdit={handleEditAnswer}
+                    onInject={handleInjectField}
                     onSkip={handleSkip}
                     onRegenerate={handleRegenerate}
                     onToggleRemember={handleToggleRemember}
@@ -818,14 +929,30 @@ export default function ReviewFlow() {
                 <h2 className="text-card text-ink-primary">
                   Document{uploadFields.length === 1 ? '' : 's'} requested
                 </h2>
-                <span className="text-caption text-ink-muted">
-                  {uploadedCount} of {injectableUploadCount} attached
-                </span>
+                {/* "0 of 0 attached" reads as a failure when EVERY detected field is
+                    one Impleo structurally can't attach to (a Google Forms Drive
+                    picker). In that case the counter is meaningless — there's nothing
+                    to attach — so show a neutral "Manual upload" pill instead. The
+                    real "N of M attached" counter returns the moment there's at least
+                    one injectable field, so ATS/generic forms are unaffected. */}
+                {injectableUploadCount > 0 ? (
+                  <span className="text-caption text-ink-muted">
+                    {uploadedCount} of {injectableUploadCount} attached
+                  </span>
+                ) : (
+                  <span className="shrink-0 rounded bg-signature/15 px-1.5 py-0.5 text-caption font-medium text-signature">
+                    Manual upload
+                  </span>
+                )}
               </div>
               {/* Stated on the review surface, not just in Settings — this is the
-                  moment the user is deciding whether to trust it. */}
+                  moment the user is deciding whether to trust it. Wording adapts: with
+                  nothing injectable, "attaches only when you approve" would be a promise
+                  Impleo can't keep here, so it points at the manual path instead. */}
               <p className="text-caption text-ink-muted">
-                Stored locally on your device. Impleo attaches a file only when you approve it.
+                {injectableUploadCount > 0
+                  ? 'Stored locally on your device. Impleo attaches a file only when you approve it.'
+                  : "Impleo can't attach files on this form, but it'll tell you which document to upload."}
               </p>
               <StaggerContainer className="space-y-2">
                 {uploadFields.map((field) => (
