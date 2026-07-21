@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { exportProfile } from '../lib/importExport.js';
 import { testApiKey, saveSettings } from '../lib/settings.js';
 import { saveProfile } from '../lib/profile.js';
+import Tabs from './extension-ui/Tabs/Tabs.jsx';
 import ImportProfileModal from './ImportProfileModal.jsx';
 import IdentityMemoryManager from './IdentityMemoryManager.jsx';
 import LearnedAnswersManager from './LearnedAnswersManager.jsx';
@@ -130,6 +131,7 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('backup');
   const busy = saving || exporting;
 
   const providerLabel = providers.find((p) => p.id === provider)?.label || provider;
@@ -197,6 +199,7 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
   async function handleSave(e) {
     e.preventDefault();
     if (!apiKey && !savedKeyProviders.has(provider)) {
+      setActiveTab('ai-settings');
       setSaveError(`Enter an API key for ${providerLabel}, or pick a provider you've already saved a key for.`);
       return;
     }
@@ -229,254 +232,350 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
   }
 
   return (
-    <form onSubmit={handleSave} className="mx-auto w-full max-w-[500px] space-y-3 p-3 sm:p-4">
-      <div className="flex min-w-0 items-center gap-2 pb-1">
-        <img src="./icons/icon-32.png" alt="" className="h-6 w-6 shrink-0" />
-        <h1 className="truncate text-title text-ink-primary">Set up your profile</h1>
-      </div>
-
-      <Section label="Backup" hint="Export a copy of your profile and saved Q&A, or import one from a file.">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleExport}
-            disabled={!initialProfile || busy}
-            className="shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50"
-          >
-            {exporting ? 'Exporting…' : 'Export profile'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setImportModalOpen(true)}
-            disabled={busy}
-            className="shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50"
-          >
-            Import profile
-          </button>
+    <form onSubmit={handleSave} className="fixed inset-0 flex flex-col">
+      <div className="mx-auto flex h-full w-full max-w-[500px] flex-col">
+        <div className="shrink-0 flex min-w-0 items-center gap-2 pb-1 px-3 pt-3 sm:px-4 sm:pt-4">
+          <img src="./icons/icon-32.png" alt="" className="h-6 w-6 shrink-0" />
+          <h1 className="truncate text-title text-ink-primary">Set up your profile</h1>
         </div>
-        <p className="text-caption text-ink-muted">
-          Exported files contain your profile <span className="text-ink-secondary">and any
-          remembered identity values (which can include sensitive IDs like Aadhaar and date of
-          birth)</span> in plain text — handle them like a resume, or more carefully.
-        </p>
 
-        {exportError && (
-          <div className="min-w-0 break-words rounded-card border border-red-900/50 bg-red-950/30 p-2.5 text-body text-red-300">
-            {exportError}
+        <div className="shrink-0 px-3 py-2 sm:px-4">
+          <Tabs
+            tabs={[
+              { id: 'backup', label: 'Backup' },
+              { id: 'profile', label: 'Profile' },
+              { id: 'background', label: 'Background' },
+              { id: 'documents', label: 'Documents' },
+              { id: 'ai-settings', label: 'AI Settings' },
+            ]}
+            activeId={activeTab}
+            onChange={setActiveTab}
+          />
+        </div>
+
+        <div className="flex-1 overflow-y-auto space-y-3 p-3 sm:p-4">
+          {/* Backup Tab - First for new users */}
+          <div
+            id="panel-backup"
+            role="tabpanel"
+            aria-labelledby="tab-backup"
+            className={activeTab === 'backup' ? '' : 'hidden'}
+          >
+            <Section label="Backup & Import" hint="Export a copy of your profile and saved Q&A, or import one from a file.">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  disabled={!initialProfile || busy}
+                  className="shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50"
+                >
+                  {exporting ? 'Exporting…' : 'Export profile'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportModalOpen(true)}
+                  disabled={busy}
+                  className="shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50"
+                >
+                  Import profile
+                </button>
+              </div>
+              <p className="text-caption text-ink-muted">
+                Exported files contain your profile <span className="text-ink-secondary">and any
+                remembered identity values (which can include sensitive IDs like Aadhaar and date of
+                birth)</span> in plain text — handle them like a resume, or more carefully.
+              </p>
+
+              {exportError && (
+                <div className="min-w-0 break-words rounded-card border border-red-900/50 bg-red-950/30 p-2.5 text-body text-red-300">
+                  {exportError}
+                </div>
+              )}
+
+              <div className="border-t border-surface-border pt-2">
+                <IdentityMemoryManager />
+              </div>
+
+              <div className="border-t border-surface-border pt-2">
+                <LearnedAnswersManager />
+              </div>
+            </Section>
           </div>
-        )}
 
-        <div className="border-t border-surface-border pt-2">
-          <IdentityMemoryManager />
-        </div>
-
-        <div className="border-t border-surface-border pt-2">
-          <LearnedAnswersManager />
-        </div>
-      </Section>
-
-      {/* Its own Section rather than a third block inside Backup: documents are the
-          one kind of remembered thing that Export/Import does NOT carry (the export
-          is a JSON envelope; base64'd PDFs don't belong in it), so filing them under
-          "Backup" would imply a guarantee that isn't there. */}
-      <Section
-        label="Identity documents"
-        hint="Your documents, always ready when applications need them. Add a resume once — Impleo offers it whenever a form asks for a file, and always waits for your approval."
-      >
-        <IdentityDocumentsManager />
-      </Section>
-
-      <Section label="AI provider" hint="Pick which provider to use — you only need a key for this one. Use whichever you have free-tier access to (e.g. a free Google Gemini key works if you don't want to pay for API usage).">
-        <select
-          className={inputClass}
-          value={provider}
-          onChange={(e) => handleProviderChange(e.target.value)}
-        >
-          {providers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-              {savedKeyProviders.has(p.id) ? ' ✓ key saved' : ''}
-            </option>
-          ))}
-        </select>
-        <input
-          type="password"
-          className={inputClass}
-          placeholder={
-            savedKeyProviders.has(provider)
-              ? 'Enter a new key to replace the saved one'
-              : KEY_HINTS[provider] || 'API key'
-          }
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-        />
-        {savedKeyProviders.has(provider) && !apiKey && (
-          <p className="text-caption text-brand">A key is already saved for {providerLabel}.</p>
-        )}
-        <input
-          className={inputClass}
-          placeholder="Model name (e.g. a free-tier model from your provider's docs)"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-        />
-        <p className="text-caption text-ink-muted">
-          Any model id your {providerLabel} account has access to — check your
-          provider's pricing/docs page for which models are free-tier. This is
-          only a suggested starting point, not enforced.
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleTestKey}
-            disabled={testing}
-            className="shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50"
+          {/* Profile Tab */}
+          <div
+            id="panel-profile"
+            role="tabpanel"
+            aria-labelledby="tab-profile"
+            className={activeTab === 'profile' ? '' : 'hidden'}
           >
-            {testing ? 'Testing…' : 'Test key'}
-          </button>
-          {keyStatus && (
-            <span className={`min-w-0 break-words text-body ${keyStatus.state === 'error' ? 'text-red-400' : 'text-brand'}`}>
-              {keyStatus.message}
-            </span>
+            <Section label="Personal info">
+              <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
+                <input
+                  className={inputClass}
+                  placeholder="Name"
+                  value={form.personal.name}
+                  onChange={(e) => updateField('personal', 'name', e.target.value)}
+                />
+                <input
+                  className={inputClass}
+                  placeholder="Email"
+                  value={form.personal.email}
+                  onChange={(e) => updateField('personal', 'email', e.target.value)}
+                />
+                <input
+                  className={inputClass}
+                  placeholder="Phone"
+                  value={form.personal.phone}
+                  onChange={(e) => updateField('personal', 'phone', e.target.value)}
+                />
+                <input
+                  className={inputClass}
+                  placeholder="Location"
+                  value={form.personal.location}
+                  onChange={(e) => updateField('personal', 'location', e.target.value)}
+                />
+              </div>
+            </Section>
+
+            <Section label="Links">
+              <input
+                className={inputClass}
+                placeholder="LinkedIn URL"
+                value={form.links.linkedin}
+                onChange={(e) => updateField('links', 'linkedin', e.target.value)}
+              />
+              <input
+                className={inputClass}
+                placeholder="GitHub URL"
+                value={form.links.github}
+                onChange={(e) => updateField('links', 'github', e.target.value)}
+              />
+              <input
+                className={inputClass}
+                placeholder="Portfolio URL"
+                value={form.links.portfolio}
+                onChange={(e) => updateField('links', 'portfolio', e.target.value)}
+              />
+            </Section>
+          </div>
+
+          {/* Background Tab */}
+          <div
+            id="panel-background"
+            role="tabpanel"
+            aria-labelledby="tab-background"
+            className={activeTab === 'background' ? '' : 'hidden'}
+          >
+            <Field label="Education (one entry per line)">
+              <textarea
+                rows={3}
+                className={inputClass}
+                value={form.education}
+                onChange={(e) => updateField(null, 'education', e.target.value)}
+              />
+            </Field>
+
+            <Field label="Skills (comma-separated)">
+              <input
+                className={inputClass}
+                value={form.skills}
+                onChange={(e) => updateField(null, 'skills', e.target.value)}
+              />
+            </Field>
+
+            <Field label="Interests (comma-separated)">
+              <input
+                className={inputClass}
+                value={form.interests}
+                onChange={(e) => updateField(null, 'interests', e.target.value)}
+              />
+            </Field>
+
+            <Field label="Goals">
+              <textarea
+                rows={3}
+                className={inputClass}
+                value={form.goals}
+                onChange={(e) => updateField(null, 'goals', e.target.value)}
+              />
+            </Field>
+
+            <Field label="Projects (one per line: name | description | tech stack | impact)">
+              <textarea
+                rows={4}
+                className={inputClass}
+                value={form.projects}
+                onChange={(e) => updateField(null, 'projects', e.target.value)}
+              />
+              <p className="text-caption text-ink-muted">
+                Don't use "|" inside a field's own text — it's the column separator.
+              </p>
+            </Field>
+
+            <Field label="Achievements (one per line)">
+              <textarea
+                rows={3}
+                className={inputClass}
+                value={form.achievements}
+                onChange={(e) => updateField(null, 'achievements', e.target.value)}
+              />
+            </Field>
+          </div>
+
+          {/* Documents Tab */}
+          <div
+            id="panel-documents"
+            role="tabpanel"
+            aria-labelledby="tab-documents"
+            className={activeTab === 'documents' ? '' : 'hidden'}
+          >
+            <Section
+              label="Identity documents"
+              hint="Your documents, always ready when applications need them. Add a resume once — Impleo offers it whenever a form asks for a file, and always waits for your approval."
+            >
+              <IdentityDocumentsManager />
+            </Section>
+
+            <Field label="Resume text (pasted)">
+              <textarea
+                rows={6}
+                className={inputClass}
+                value={form.resumeText}
+                onChange={(e) => updateField(null, 'resumeText', e.target.value)}
+              />
+            </Field>
+
+            <Field label="Writing sample (1-2 past answers/essays)">
+              <textarea
+                rows={6}
+                className={inputClass}
+                value={form.writingSampleText}
+                onChange={(e) => updateField(null, 'writingSampleText', e.target.value)}
+              />
+            </Field>
+          </div>
+
+          {/* AI Settings Tab */}
+          <div
+            id="panel-ai-settings"
+            role="tabpanel"
+            aria-labelledby="tab-ai-settings"
+            className={activeTab === 'ai-settings' ? '' : 'hidden'}
+          >
+            <Section label="AI provider" hint="Pick which provider to use — you only need a key for this one. Use whichever you have free-tier access to (e.g. a free Google Gemini key works if you don't want to pay for API usage).">
+              <select
+                className={inputClass}
+                value={provider}
+                onChange={(e) => handleProviderChange(e.target.value)}
+              >
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                    {savedKeyProviders.has(p.id) ? ' ✓ key saved' : ''}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="password"
+                className={inputClass}
+                placeholder={
+                  savedKeyProviders.has(provider)
+                    ? 'Enter a new key to replace the saved one'
+                    : KEY_HINTS[provider] || 'API key'
+                }
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+              />
+              {savedKeyProviders.has(provider) && !apiKey && (
+                <p className="text-caption text-brand">A key is already saved for {providerLabel}.</p>
+              )}
+              <input
+                className={inputClass}
+                placeholder="Model name (e.g. a free-tier model from your provider's docs)"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              />
+              <p className="text-caption text-ink-muted">
+                Any model id your {providerLabel} account has access to — check your
+                provider's pricing/docs page for which models are free-tier. This is
+                only a suggested starting point, not enforced.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleTestKey}
+                  disabled={testing}
+                  className="shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50"
+                >
+                  {testing ? 'Testing…' : 'Test key'}
+                </button>
+                {keyStatus && (
+                  <span className={`min-w-0 break-words text-body ${keyStatus.state === 'error' ? 'text-red-400' : 'text-brand'}`}>
+                    {keyStatus.message}
+                  </span>
+                )}
+              </div>
+            </Section>
+
+            <Section label="Backup" hint="Export a copy of your profile and saved Q&A, or import one from a file.">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  disabled={!initialProfile || busy}
+                  className="shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50"
+                >
+                  {exporting ? 'Exporting…' : 'Export profile'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportModalOpen(true)}
+                  disabled={busy}
+                  className="shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50"
+                >
+                  Import profile
+                </button>
+              </div>
+              <p className="text-caption text-ink-muted">
+                Exported files contain your profile <span className="text-ink-secondary">and any
+                remembered identity values (which can include sensitive IDs like Aadhaar and date of
+                birth)</span> in plain text — handle them like a resume, or more carefully.
+              </p>
+
+              {exportError && (
+                <div className="min-w-0 break-words rounded-card border border-red-900/50 bg-red-950/30 p-2.5 text-body text-red-300">
+                  {exportError}
+                </div>
+              )}
+
+              <div className="border-t border-surface-border pt-2">
+                <IdentityMemoryManager />
+              </div>
+
+              <div className="border-t border-surface-border pt-2">
+                <LearnedAnswersManager />
+              </div>
+            </Section>
+          </div>
+        </div>
+
+        <div className="shrink-0 space-y-2 border-t border-surface-border px-3 py-3 sm:px-4">
+          {saveError && (
+            <div className="min-w-0 break-words rounded-card border border-red-900/50 bg-red-950/30 p-2.5 text-body text-red-300">
+              {saveError}
+            </div>
           )}
+
+          <button
+            type="submit"
+            disabled={busy}
+            className="w-full rounded-btn bg-brand px-3 py-2 text-body font-medium text-jungle shadow-soft-sm transition-colors duration-150 hover:bg-brand-hover disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save profile'}
+          </button>
         </div>
-      </Section>
-
-      <Section label="Personal info">
-        <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
-          <input
-            className={inputClass}
-            placeholder="Name"
-            value={form.personal.name}
-            onChange={(e) => updateField('personal', 'name', e.target.value)}
-          />
-          <input
-            className={inputClass}
-            placeholder="Email"
-            value={form.personal.email}
-            onChange={(e) => updateField('personal', 'email', e.target.value)}
-          />
-          <input
-            className={inputClass}
-            placeholder="Phone"
-            value={form.personal.phone}
-            onChange={(e) => updateField('personal', 'phone', e.target.value)}
-          />
-          <input
-            className={inputClass}
-            placeholder="Location"
-            value={form.personal.location}
-            onChange={(e) => updateField('personal', 'location', e.target.value)}
-          />
-        </div>
-      </Section>
-
-      <Section label="Links">
-        <input
-          className={inputClass}
-          placeholder="LinkedIn URL"
-          value={form.links.linkedin}
-          onChange={(e) => updateField('links', 'linkedin', e.target.value)}
-        />
-        <input
-          className={inputClass}
-          placeholder="GitHub URL"
-          value={form.links.github}
-          onChange={(e) => updateField('links', 'github', e.target.value)}
-        />
-        <input
-          className={inputClass}
-          placeholder="Portfolio URL"
-          value={form.links.portfolio}
-          onChange={(e) => updateField('links', 'portfolio', e.target.value)}
-        />
-      </Section>
-
-      <Field label="Education (one entry per line)">
-        <textarea
-          rows={3}
-          className={inputClass}
-          value={form.education}
-          onChange={(e) => updateField(null, 'education', e.target.value)}
-        />
-      </Field>
-
-      <Field label="Skills (comma-separated)">
-        <input
-          className={inputClass}
-          value={form.skills}
-          onChange={(e) => updateField(null, 'skills', e.target.value)}
-        />
-      </Field>
-
-      <Field label="Interests (comma-separated)">
-        <input
-          className={inputClass}
-          value={form.interests}
-          onChange={(e) => updateField(null, 'interests', e.target.value)}
-        />
-      </Field>
-
-      <Field label="Goals">
-        <textarea
-          rows={3}
-          className={inputClass}
-          value={form.goals}
-          onChange={(e) => updateField(null, 'goals', e.target.value)}
-        />
-      </Field>
-
-      <Field label="Projects (one per line: name | description | tech stack | impact)">
-        <textarea
-          rows={4}
-          className={inputClass}
-          value={form.projects}
-          onChange={(e) => updateField(null, 'projects', e.target.value)}
-        />
-        <p className="text-caption text-ink-muted">
-          Don't use "|" inside a field's own text — it's the column separator.
-        </p>
-      </Field>
-
-      <Field label="Achievements (one per line)">
-        <textarea
-          rows={3}
-          className={inputClass}
-          value={form.achievements}
-          onChange={(e) => updateField(null, 'achievements', e.target.value)}
-        />
-      </Field>
-
-      <Field label="Resume text (pasted)">
-        <textarea
-          rows={6}
-          className={inputClass}
-          value={form.resumeText}
-          onChange={(e) => updateField(null, 'resumeText', e.target.value)}
-        />
-      </Field>
-
-      <Field label="Writing sample (1-2 past answers/essays)">
-        <textarea
-          rows={6}
-          className={inputClass}
-          value={form.writingSampleText}
-          onChange={(e) => updateField(null, 'writingSampleText', e.target.value)}
-        />
-      </Field>
-
-      {saveError && (
-        <div className="min-w-0 break-words rounded-card border border-red-900/50 bg-red-950/30 p-2.5 text-body text-red-300">
-          {saveError}
-        </div>
-      )}
-
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full rounded-btn bg-brand px-3 py-2 text-body font-medium text-jungle shadow-soft-sm transition-colors duration-150 hover:bg-brand-hover disabled:opacity-50"
-      >
-        {saving ? 'Saving…' : 'Save profile'}
-      </button>
+      </div>
 
       <ImportProfileModal
         open={importModalOpen}
