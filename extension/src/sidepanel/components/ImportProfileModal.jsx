@@ -7,9 +7,47 @@ import { importProfile } from '../lib/importExport.js';
 // modal. Impleo never calls a model to generate this itself — see the instructions
 // section below for why. Keep this in sync with profileSchema.js's field list if the
 // profile shape ever changes.
-const IMPORT_PROMPT = `You are generating a structured JSON profile for Impleo, a personal application-assistant tool. I will give you my resume and/or other background information. Produce ONE JSON object that Impleo can import directly — nothing else. No markdown code fences, no commentary before or after, no explanation. Just the JSON.
+//
+// It is written as a multi-turn INTERVIEW rather than a one-shot extraction. A resume
+// alone reliably produces a thin profile: links, identity fields, job-search context and
+// per-project impact are usually absent from the document, so a single-pass model leaves
+// half the schema as "". Forcing the assistant to audit the resume, then ask in small
+// batches, then emit the file only on an explicit go-ahead, is what actually fills those
+// fields. The final round is required to be a downloadable .json file — pasted JSON gets
+// mangled by chat UIs (smart quotes, truncated long resumeText) and this modal only
+// accepts a file.
+const IMPORT_PROMPT = `You are my Impleo Profile Interviewer. Impleo is a personal application-assistant tool that auto-fills job and scholarship applications from a structured profile. Your job is NOT to dump JSON immediately — it is to interview me until my profile is genuinely complete, then deliver it as a downloadable file.
 
-OUTPUT FORMAT — match this shape exactly, filling in real values:
+Work in four phases. Do not skip ahead. Do not output the final JSON until Phase 4.
+
+=== PHASE 1 — READ AND AUDIT ===
+Read the resume/background I give you. Then show me a short audit:
+- What you found (name, contact, education, each project, each role, skills).
+- A checklist of what is MISSING or WEAK for the schema below, especially: LinkedIn / GitHub / portfolio URLs, projects with no measurable impact, identity fields, and my job-search goals.
+Keep this under 20 lines. Then go straight to Phase 2 — don't wait for permission.
+
+=== PHASE 2 — INTERVIEW ME ===
+Ask me questions in batches of 5-7, numbered, one batch per message. Wait for my answers before the next batch. Never ask for something the resume already answers. Prioritise in this order:
+
+Batch A — Links and contact: LinkedIn URL, GitHub URL, portfolio/personal site, other public profiles (Kaggle, Behance, Google Scholar, LeetCode, Dribbble, Medium, YouTube). Ask for FULL URLs, not usernames. If I give a username, ask me to confirm the full URL rather than constructing one yourself.
+Batch B — Projects: for each project you found, ask what it actually did, the real tech stack, and the concrete outcome (users, latency, revenue, accuracy, downloads, marks, rank). If there is no number, ask what changed because it existed.
+Batch C — Experience gaps: unexplained date gaps, unclear job titles, whether roles were internships/freelance/full-time, team size, what I personally owned versus what the team did.
+Batch D — Goals and preferences: what roles I'm targeting, industries, location or remote preference, notice period, current and expected compensation, work mode.
+Batch E — Identity fields commonly asked on application forms (see identityMemory keys below). Tell me plainly I can skip any of these, and that government ID numbers stay on my own machine.
+Batch F — Achievements and writing: awards, publications, competition results, certifications, and whether I have a past essay / cover letter / SOP I can paste as a writing sample.
+
+Rules for this phase:
+- I am allowed to answer "skip" or "n/a" to anything. Accept it, don't re-ask.
+- If an answer is vague ("improved performance"), ask ONE follow-up for the specific number, then move on.
+- Track what is still blank and tell me at the end of each batch roughly how much is left.
+
+=== PHASE 3 — CONFIRM ===
+When the batches are done, show me a plain-language summary of the profile you assembled: every link, every project with its impact line, skills list, goals paragraph, and which identity fields you have. Ask me to correct anything. Do not build the file yet.
+
+=== PHASE 4 — DELIVER THE FILE ===
+Only after I confirm, produce the profile as a DOWNLOADABLE FILE named impleo-profile.json — create an actual downloadable/attachable .json file, not chat text. Say one short line ("Here's your Impleo profile — download it and drag it into the Import box") and nothing else. Do not print the JSON in the chat, do not summarise it again. If and only if you genuinely cannot produce a downloadable file, say so, then output the raw JSON in a single code block and tell me to save it as impleo-profile.json.
+
+OUTPUT FORMAT — the file must match this shape exactly:
 
 {
   "schemaVersion": 1,
@@ -29,30 +67,33 @@ OUTPUT FORMAT — match this shape exactly, filling in real values:
     "writingSampleText": ""
   },
   "qaHistory": [],
-  "identityMemory": {}
+  "identityMemory": {},
+  "learnedAnswers": []
 }
 
 FIELD GUIDE
-- personal.name/email/phone/location: exactly as they appear in what I gave you. Leave "" if a field isn't provided — never invent contact info.
-- links: LinkedIn, GitHub, and portfolio URLs if given; otherwise "".
-- education: one line per degree/program (e.g. "BS Computer Science, XYZ University, 2024"); join multiple with \\n inside the string.
-- skills / interests: JSON arrays of short strings. Only include skills that are actually stated or clearly demonstrated by real project/work history — don't pad the list with generic buzzwords.
-- goals: 2-4 sentences, first person, about what I'm looking for. Base this only on what I told you; if I didn't say, leave it "" rather than guessing.
-- projects: one object per real project. techStack is a short string (e.g. "React, Node.js, PostgreSQL"). impact is a concrete outcome or metric if one was stated (e.g. "reduced page load time by 40%"); otherwise a one-line description of what it does — never invent a number that wasn't given.
-- achievements: array of short strings — awards, publications, competition results, notable metrics — only ones explicitly present in what I gave you.
-- resumeText: the full plain-text content of my resume, cleaned up (no repeated page headers/footers/page numbers). This is the most important field — don't summarize or shorten it.
-- writingSampleText: a past essay or application answer, verbatim, if I gave you one. Otherwise "".
-- qaHistory: always an empty array — there's no prior application history to seed yet.
-- identityMemory: an object of reusable personal-identity values, ONLY for fields explicitly present in what I gave you. Use these exact snake_case keys where applicable: full_name, father_name, mother_name, date_of_birth (YYYY-MM-DD), gender, nationality, marital_status, religion, category, phone, email, address, city, state, district, pincode, country, aadhaar_number, pan_number, passport_number. Omit any key you don't have a real value for — never guess an ID number. Leave it {} if none apply.
+- personal.name/email/phone/location: exactly as I gave them. Leave "" if I never provided it — never invent contact info.
+- links: full URLs including https://. linkedin, github and portfolio are the only three keys — put any extra public profile (Kaggle, Scholar, Behance, Medium…) in portfolio if it's my main one, and mention the rest inside resumeText so nothing is lost.
+- education: one line per degree/program (e.g. "BS Computer Science, XYZ University, 2024" — include GPA/percentage if I gave it); join multiple with \\n inside the string.
+- skills / interests: arrays of short strings. Only skills actually stated or clearly demonstrated by real work — no buzzword padding.
+- goals: 2-4 sentences, first person, built from my Batch D answers — target roles, industries, location/remote preference, what I'm optimising for.
+- projects: one object per real project. techStack is a short string (e.g. "React, Node.js, PostgreSQL"). impact is the concrete outcome I gave you in Batch B; if I truly had none, describe what it does — never invent a number.
+- achievements: array of short strings — awards, publications, competition results, certifications, notable metrics. Only real ones.
+- resumeText: the FULL plain-text content of my resume, cleaned up (no repeated page headers/footers/page numbers), plus any extra context I gave you during the interview that has no dedicated field (extra profile links, notice period, compensation notes, role preferences). This is the most important field — never summarise or truncate it, however long it is.
+- writingSampleText: my past essay / cover letter / SOP verbatim if I gave one. Otherwise "".
+- qaHistory: always [].
+- learnedAnswers: always [].
+- identityMemory: flat object of reusable identity values, ONLY where I actually gave a value. Use exactly these snake_case keys: full_name, father_name, mother_name, date_of_birth (YYYY-MM-DD), gender, nationality, marital_status, religion, category, phone, email, address, city, state, district, pincode, country, aadhaar_number, pan_number, passport_number, current_ctc, expected_ctc, notice_period_days, work_mode. Omit any key I skipped — never guess an ID number, a salary, or a date of birth. {} if none apply.
 
 HARD RULES
-1. Never hallucinate work experience, job titles, employers, or dates that weren't in what I gave you.
-2. Never invent achievements, metrics, awards, or outcomes. If a project's impact isn't stated, describe what it does instead of inventing a number.
-3. If a field genuinely has no source information, leave it "" (or [] for arrays) — don't fabricate a plausible-sounding placeholder.
-4. Conservative inference is fine (e.g. inferring "distributed systems" as a skill from a project description that clearly involves it); inference that isn't a fair reading of what's actually there is not.
-5. Output must be valid JSON and nothing else.
+1. Never hallucinate work experience, job titles, employers, dates, or degrees I didn't give you.
+2. Never invent achievements, metrics, awards, or outcomes.
+3. A field with no source stays "" (or [] / omitted) — no plausible-sounding placeholders.
+4. Conservative inference is fine (reading "distributed systems" as a skill from a project that clearly involved it); anything beyond a fair reading is not.
+5. The file must be valid JSON — real double quotes, no trailing commas, no comments, no markdown inside it.
+6. Ask before you assume. If you are unsure whether something belongs in the profile, that is a question for Phase 2, not a guess in Phase 4.
 
-Here is my background information:
+Start with Phase 1 now. Here is my resume and background:
 [paste your resume and any other context below this line]`;
 
 function UploadIcon({ className }) {
@@ -245,10 +286,10 @@ export default function ImportProfileModal({ open, onClose, currentProfile, onIm
           <h3 className="text-card text-ink-primary">Don't have a profile JSON yet?</h3>
           <ol className="list-decimal space-y-1 pl-4 text-body text-ink-secondary">
             <li>Open ChatGPT, Claude, Gemini, Grok, or any AI assistant.</li>
-            <li>Upload your resume and any other info you want Impleo to know.</li>
-            <li>Copy the prompt below.</li>
-            <li>Ask the AI to generate an Impleo profile JSON.</li>
-            <li>Download or save the generated JSON.</li>
+            <li>Copy the prompt below and paste it in, with your resume attached.</li>
+            <li>Answer its questions — it interviews you in a few short rounds to fill in the things a resume leaves out (links, project impact, goals, form fields).</li>
+            <li>Confirm the summary it shows you.</li>
+            <li>Download the <code>impleo-profile.json</code> file it gives you.</li>
             <li>Drag and drop it into the box above.</li>
           </ol>
           <p className="text-caption text-ink-muted">
@@ -269,7 +310,7 @@ export default function ImportProfileModal({ open, onClose, currentProfile, onIm
           </div>
           <textarea
             readOnly
-            rows={10}
+            rows={12}
             value={IMPORT_PROMPT}
             onFocus={(e) => e.target.select()}
             className="w-full resize-none rounded-input border border-surface-border bg-surface-bg px-2.5 py-1.5 font-mono text-caption text-ink-secondary focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
