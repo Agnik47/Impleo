@@ -4,6 +4,7 @@ import { testApiKey, saveSettings } from '../lib/settings.js';
 import { saveProfile } from '../lib/profile.js';
 import Tabs from './extension-ui/Tabs/Tabs.jsx';
 import ImportProfileModal from './ImportProfileModal.jsx';
+import WelcomeWizard from './WelcomeWizard.jsx';
 import IdentityMemoryManager from './IdentityMemoryManager.jsx';
 import LearnedAnswersManager from './LearnedAnswersManager.jsx';
 import IdentityDocumentsManager from './IdentityDocumentsManager.jsx';
@@ -131,7 +132,13 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('backup');
+  const [activeTab, setActiveTab] = useState('profile');
+  // Only true-first-time users (no profile saved yet at all) get the wizard —
+  // returning users who reopen this screen via the "Settings" button already
+  // have a profile, so initialProfile is non-null for them. Lazy init so a
+  // later re-render from the initialProfile-resync effect below doesn't
+  // reopen it mid-edit.
+  const [showWelcome, setShowWelcome] = useState(() => !initialProfile);
   const busy = saving || exporting;
 
   const providerLabel = providers.find((p) => p.id === provider)?.label || provider;
@@ -239,14 +246,14 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
           <h1 className="truncate text-title text-ink-primary">Set up your profile</h1>
         </div>
 
-        <div className="shrink-0 px-3 py-2 sm:px-4">
+        <div className="shrink-0 px-3 pb-2 sm:px-4">
           <Tabs
             tabs={[
-              { id: 'backup', label: 'Backup' },
               { id: 'profile', label: 'Profile' },
               { id: 'background', label: 'Background' },
               { id: 'documents', label: 'Documents' },
               { id: 'ai-settings', label: 'AI Settings' },
+              { id: 'backup', label: 'Backup' },
             ]}
             activeId={activeTab}
             onChange={setActiveTab}
@@ -254,54 +261,6 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-3 p-3 sm:p-4">
-          {/* Backup Tab - First for new users */}
-          <div
-            id="panel-backup"
-            role="tabpanel"
-            aria-labelledby="tab-backup"
-            className={activeTab === 'backup' ? '' : 'hidden'}
-          >
-            <Section label="Backup & Import" hint="Export a copy of your profile and saved Q&A, or import one from a file.">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleExport}
-                  disabled={!initialProfile || busy}
-                  className="shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50"
-                >
-                  {exporting ? 'Exporting…' : 'Export profile'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setImportModalOpen(true)}
-                  disabled={busy}
-                  className="shrink-0 rounded-btn border border-surface-border bg-surface-card-hover px-3 py-1 text-body text-ink-primary transition-colors duration-150 hover:bg-surface-border disabled:opacity-50"
-                >
-                  Import profile
-                </button>
-              </div>
-              <p className="text-caption text-ink-muted">
-                Exported files contain your profile <span className="text-ink-secondary">and any
-                remembered identity values (which can include sensitive IDs like Aadhaar and date of
-                birth)</span> in plain text — handle them like a resume, or more carefully.
-              </p>
-
-              {exportError && (
-                <div className="min-w-0 break-words rounded-card border border-red-900/50 bg-red-950/30 p-2.5 text-body text-red-300">
-                  {exportError}
-                </div>
-              )}
-
-              <div className="border-t border-surface-border pt-2">
-                <IdentityMemoryManager />
-              </div>
-
-              <div className="border-t border-surface-border pt-2">
-                <LearnedAnswersManager />
-              </div>
-            </Section>
-          </div>
-
           {/* Profile Tab */}
           <div
             id="panel-profile"
@@ -517,8 +476,16 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
                 )}
               </div>
             </Section>
+          </div>
 
-            <Section label="Backup" hint="Export a copy of your profile and saved Q&A, or import one from a file.">
+          {/* Backup Tab */}
+          <div
+            id="panel-backup"
+            role="tabpanel"
+            aria-labelledby="tab-backup"
+            className={activeTab === 'backup' ? '' : 'hidden'}
+          >
+            <Section label="Backup & Import" hint="Export a copy of your profile and saved Q&A, or import one from a file.">
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -582,6 +549,31 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
         onClose={() => setImportModalOpen(false)}
         currentProfile={initialProfile}
         onImported={onSaved}
+      />
+
+      <WelcomeWizard
+        open={showWelcome}
+        providers={providers}
+        provider={provider}
+        apiKey={apiKey}
+        model={model}
+        keyStatus={keyStatus}
+        testing={testing}
+        savedKeyProviders={savedKeyProviders}
+        providerLabel={providerLabel}
+        onProviderChange={handleProviderChange}
+        onApiKeyChange={setApiKey}
+        onModelChange={setModel}
+        onTestKey={handleTestKey}
+        onImportNow={() => {
+          setShowWelcome(false);
+          setActiveTab('backup');
+          setImportModalOpen(true);
+        }}
+        onManualSetup={() => {
+          setShowWelcome(false);
+          setActiveTab('profile');
+        }}
       />
     </form>
   );

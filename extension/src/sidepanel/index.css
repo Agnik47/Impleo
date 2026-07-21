@@ -71,6 +71,18 @@
     border: 1px solid rgba(40, 201, 78, 0.14);
   }
 
+  /* Hides the scrollbar on a horizontally-scrollable strip (the Tabs bar's
+     narrow-width fallback) while keeping it scrollable by drag/touch/wheel —
+     an unstyled native scrollbar inside a compact pill reads as a UI bug,
+     not an affordance, at this size. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Subtle film-grain noise, inlined as an SVG data URI feTurbulence filter —
      zero network request, zero JS, and (unlike a particle system) entirely
      static, so it costs nothing per frame. Painted at very low opacity as a
