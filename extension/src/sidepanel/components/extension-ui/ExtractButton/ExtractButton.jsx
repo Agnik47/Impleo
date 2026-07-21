@@ -1,6 +1,5 @@
 import { useId, useRef, useState } from "react";
 import { motion } from "motion/react";
-import { useMagnetic } from "../MotionSystem/motion.js";
 import { useReducedMotion } from "../MotionSystem/useReducedMotion.js";
 
 /*
@@ -17,7 +16,7 @@ import { useReducedMotion } from "../MotionSystem/useReducedMotion.js";
  * presentational states to render.
  */
 const COPY = {
-  idle: "form from this page",
+  idle: "Pull Form into Impleo",
   extracting: "Extracting…",
   generating: "Reading the form…",
   error: "Try again",
@@ -32,7 +31,7 @@ export default function ExtractButton({ phase, onClick, className = "" }) {
 
   const busy = phase === "extracting" || phase === "generating";
   const isError = phase === "error";
-  const { x, y } = useMagnetic(ref, { disabled: reduced || busy });
+  // Magnetic pointer-follow removed to prevent hover translate animation
 
   function handlePointerDown(e) {
     if (busy || reduced) return;
@@ -57,7 +56,6 @@ export default function ExtractButton({ phase, onClick, className = "" }) {
       onClick={onClick}
       onPointerDown={handlePointerDown}
       disabled={busy}
-      style={reduced ? undefined : { x, y }}
       className={[
         "group relative w-full overflow-hidden rounded-btn px-3 py-2.5 text-body font-medium",
         "border transition-colors duration-150",

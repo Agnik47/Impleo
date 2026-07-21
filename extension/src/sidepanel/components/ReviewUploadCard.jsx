@@ -1,26 +1,9 @@
 import { memo, useRef, useState } from 'react';
 import { FILE_ACCEPT_ATTRIBUTE, MAX_DOCUMENTS, formatBytes, formatLabel } from '../lib/documents.js';
 
-// The approval gate for one detected upload field.
-//
-// Named ReviewUploadCard, not ReviewUploadModal as the brief sketched: the side
-// panel IS the review surface, so a modal overlaid on it would be chrome around
-// chrome, and it would break the one-card-per-field rhythm the rest of the review
-// already has. The behaviour the brief asked for is unchanged and non-negotiable —
-// the field is shown, a document is suggested with a reason, the user picks, and
-// NOTHING reaches the page until they click Approve upload.
-//
-// There is deliberately no "approve all uploads" affordance, even though the text
-// fields above have "Accept high/mid". Sending the wrong document to an employer is
-// not a mistake you can walk back the way a wrong text answer is, so each file is
-// approved on its own or not at all.
-
 const chipBtn =
   'inline-flex shrink-0 items-center gap-1 rounded-btn px-2 py-1 text-caption font-medium transition-colors duration-150';
 
-// Where the suggestion came from. Shown as a badge so "why this file?" is always
-// answerable at a glance, and so an AI tie-break is never mistaken for a fact Impleo
-// knows about you.
 const SOURCE_BADGE = {
   'domain-preference': { text: 'Your last choice here', className: 'bg-brand/15 text-brand' },
   heuristic: { text: 'Matched to this form', className: 'bg-brand/15 text-brand' },
@@ -47,24 +30,14 @@ function UploadIcon({ className = 'h-4 w-4' }) {
 
 function ReviewUploadCard({ field, review, documents, onSelect, onApprove, onSkip, onAddDocument }) {
   const [adding, setAdding] = useState(false);
-  // The file list is collapsed behind "Change file" by default. With one stored
-  // resume the list was pure noise; with several it pushed the approve button
-  // off-screen on a side panel this narrow, which is what made "which file is it
-  // about to send?" hard to answer at a glance — the one question this card
-  // exists to answer.
   const [choosing, setChoosing] = useState(false);
   const fileInputRef = useRef(null);
-
   const status = review?.status ?? 'pending';
   const selectedFileId = review?.selectedFileId ?? null;
   const recommendation = review?.recommendation ?? null;
   const suggestedFileId = recommendation?.suggestedFileId ?? null;
   const atLimit = documents.length >= MAX_DOCUMENTS;
   const selectedDoc = documents.find((d) => d.fileId === selectedFileId) ?? null;
-  // Which document to name on a field Impleo can't attach to (a Drive picker), so
-  // the manual upload is a known file, not a guess. Prefer the recommendation, then
-  // whatever's selected (loadUploadContext preselects the recommendation or the
-  // newest doc), then the first stored doc — anything beats naming nothing.
   const manualPickDoc =
     documents.find((d) => d.fileId === suggestedFileId) ?? selectedDoc ?? documents[0] ?? null;
 
@@ -81,8 +54,6 @@ function ReviewUploadCard({ field, review, documents, onSelect, onApprove, onSki
     if (!file) return;
     setAdding(true);
     try {
-      // Selects the new file for this field but does NOT approve it, so this
-      // collapses to the same approval gate a manual pick lands on.
       await onAddDocument(field.id, file);
       setChoosing(false);
     } finally {
