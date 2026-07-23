@@ -45,11 +45,19 @@ other three, and does not call any other host — no analytics endpoint, no
 error reporting service, no update server of ours, nothing.
 
 **What's in that request:** the questions from the form you're filling, plus
-the relevant parts of your profile needed to answer them, plus your remembered
-identity values, plus up to 3 recent Q&A entries for tone. Impleo deliberately
-sends *less* than it could: your resume text and writing sample are only
-included when a question actually needs them (an essay question), and are
-omitted entirely for forms that only ask for short factual fields.
+the relevant parts of your profile needed to answer them, plus your
+non-sensitive remembered identity values (such as name, city, or email), plus
+up to 3 recent Q&A entries for tone. Impleo deliberately sends *less* than it
+could:
+
+- **Sensitive government/financial IDs — Aadhaar number, PAN number, passport
+  number, and date of birth — are never sent to the AI provider.** When a form
+  asks for one of these, Impleo recognises the field locally and fills it from
+  your remembered value on your own machine; the value itself is never placed
+  in the text sent to the provider.
+- Your resume text and writing sample are only included when a question
+  actually needs them (an essay question), and are omitted entirely for forms
+  that only ask for short factual fields.
 
 **Your API key** is sent to that provider as the request's authentication
 header, which is the only way an API key can work. It is not sent anywhere

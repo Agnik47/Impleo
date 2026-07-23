@@ -107,10 +107,22 @@ export function extractGenericForm() {
     return 'text';
   }
 
+  // The stamp id carries a per-scan random nonce, not just a sequential counter.
+  // A predictable id (`impleo-1`) can be pre-seeded by a malicious page onto a
+  // decoy element placed earlier in the DOM; at injection time the engine's
+  // selector would then also match the attacker's node and could write the user's
+  // answer into it. An unguessable nonce defeats blind pre-seeding, and
+  // injection-engine.js additionally refuses to fill a single-value field whose
+  // selector matches more than one element, which defeats a page that copies the
+  // stamp after it's applied.
+  const scanNonce = (
+    (typeof crypto !== 'undefined' && crypto.randomUUID && crypto.randomUUID()) ||
+    `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`
+  ).replace(/-/g, '').slice(0, 16);
   let counter = 0;
   function stampId(elements) {
     counter += 1;
-    const id = `impleo-${counter}`;
+    const id = `impleo-${scanNonce}-${counter}`;
     elements.forEach((el) => el.setAttribute('data-impleo-id', id));
     return id;
   }

@@ -40,6 +40,14 @@ export async function injectFields(request) {
   const { platform, fields, scrollIntoView = false } = request || {};
   const list = Array.isArray(fields) ? fields : [];
 
+  // Field types that must resolve to exactly one element. A radio/checkbox group
+  // legitimately stamps several elements with one id, so those are excluded; but a
+  // text/textarea/dropdown answer has a single target, and a stamped selector that
+  // matches more than one of them means the page copied our (per-scan random)
+  // marker onto a decoy node to capture the value. injectOne refuses to write in
+  // that case rather than risk filling an attacker-controlled element.
+  const SINGLE_ELEMENT_TYPES = new Set(['text', 'textarea', 'dropdown']);
+
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   // One frame is enough for a synchronous re-render to have happened; the extra
@@ -427,6 +435,17 @@ export async function injectFields(request) {
       return {
         status: 'not_found',
         reason: 'That field is no longer on the page. Re-scan the form and try again.',
+      };
+    }
+
+    // A single-value field whose marker matches more than one element is a stamp
+    // collision — most likely a page that copied our marker onto a decoy to capture
+    // the value. Refuse rather than write the answer into the wrong (possibly
+    // attacker-controlled) element.
+    if (SINGLE_ELEMENT_TYPES.has(field.fieldType) && elements.length > 1) {
+      return {
+        status: 'error',
+        reason: 'This field could not be matched unambiguously on the page, so Impleo did not fill it.',
       };
     }
 

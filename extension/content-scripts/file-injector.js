@@ -35,13 +35,28 @@ export function injectDocumentIntoField(selector, descriptor) {
   // element it was on is gone too, and silently grabbing "some other file input"
   // could attach a resume to the wrong question — so this reports not_found instead
   // of guessing.
-  const host = document.querySelector(selector);
-  if (!host) {
+  // An upload field's stamped selector must resolve to EXACTLY ONE element. Zero
+  // means the field is gone (re-render). More than one means the page has more than
+  // one element carrying our marker — the marker is a per-scan random nonce applied
+  // to a single node, so a second match is not a coincidence: it is a page that
+  // copied the stamp onto a decoy file input (typically placed earlier in the DOM)
+  // to capture the user's document. Refuse rather than write the file into a
+  // node we didn't stamp — silently attaching a resume/identity document to an
+  // attacker-controlled input is the worst outcome this code can produce.
+  const matches = document.querySelectorAll(selector);
+  if (matches.length === 0) {
     return {
       status: 'not_found',
       reason: 'That upload field is no longer on the page. Re-scan the form and try again.',
     };
   }
+  if (matches.length > 1) {
+    return {
+      status: 'error',
+      reason: 'This upload field could not be matched unambiguously on the page, so Impleo did not attach the file. Re-scan the form and try again.',
+    };
+  }
+  const host = matches[0];
 
   let file;
   try {

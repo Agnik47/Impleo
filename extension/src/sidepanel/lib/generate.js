@@ -4,7 +4,7 @@
 // changes, and every db.prepare() read becomes a call into the Phase 3/4
 // modules that now own that data. This is the phase where every earlier
 // phase's work actually gets used together for the first time.
-import { isValidKey, isRiskClusterKey, labelFor, registryPromptList } from './fieldRegistry.js';
+import { isValidKey, isRiskClusterKey, isSensitiveKey, labelFor, registryPromptList } from './fieldRegistry.js';
 import { routeField, buildResolvedAnswer } from './fieldRouter.js';
 import { selectContext } from './promptContext.js';
 import { estimateTokens, computeMaxTokens, logTokenMetrics } from './tokens.js';
@@ -45,10 +45,27 @@ async function getRecentQaHistory() {
 // are all clearly prose/choice (nothing identity-like to classify), saving
 // those calls the registry's tokens.
 function buildSystemPrompt(profile, identityMemory, contextText, includeClassification, editing = false) {
-  const memoryEntries = Object.entries(identityMemory || {});
-  const memoryBlock = memoryEntries.length
-    ? memoryEntries.map(([k, v]) => `- ${k}: ${v}`).join('\n')
+  // Data minimization: sensitive government/financial IDs (Aadhaar, PAN, passport,
+  // date of birth — isSensitiveKey) are DELIBERATELY withheld from the prompt sent
+  // to the third-party AI provider. The model does not need their values to do its
+  // job: it classifies a field from the question text plus the registry key list
+  // (see classificationBlock), and the actual remembered value is injected LOCALLY
+  // afterward by mergeAnswer() — never by the model echoing it. Sending the raw ID
+  // would transmit the user's most sensitive PII to the provider on every call for
+  // no functional benefit. Non-sensitive values (name, city, email, phone…) stay,
+  // since the model may legitimately weave them into prose answers.
+  const allEntries = Object.entries(identityMemory || {});
+  const disclosableEntries = allEntries.filter(([k]) => !isSensitiveKey(k));
+  const withheldCount = allEntries.length - disclosableEntries.length;
+  const memoryBlock = disclosableEntries.length
+    ? disclosableEntries.map(([k, v]) => `- ${k}: ${v}`).join('\n')
     : '(none remembered yet)';
+  // When sensitive values are withheld, still tell the model they exist so it sets
+  // the correct canonicalKey for such a field (its value is filled locally). This
+  // discloses only that the key is remembered, never the value itself.
+  const withheldNote = withheldCount
+    ? '\n(Some sensitive identity values — e.g. government IDs — are remembered but withheld here for privacy; Impleo fills them locally after classification, so still set the correct canonicalKey for such fields.)'
+    : '';
 
   // Auto-generation: the profile is the ceiling, never to be exceeded by
   // invention. Editor mode: the user's instruction is the ceiling, the profile
@@ -87,7 +104,7 @@ PROFILE:
 ${contextText}
 
 REMEMBERED IDENTITY (the user entered these once; reuse them verbatim when a field means the same thing):
-${memoryBlock}${classificationBlock}
+${memoryBlock}${withheldNote}${classificationBlock}
 
 Answering rules:
 - fieldType "text", "textarea": write a personalized answer in the person's voice (match the writing sample's tone if provided).

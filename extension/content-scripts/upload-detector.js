@@ -139,10 +139,22 @@ export function detectUploadFields() {
     stale.removeAttribute('data-impleo-upload-id');
   }
 
+  // The stamp id carries a per-scan random nonce, not just a sequential counter.
+  // A predictable id (`impleo-upload-1`) can be pre-seeded by a malicious page onto
+  // a decoy file input placed earlier in the DOM; at injection time
+  // file-injector.js's selector would then match the attacker's element and the
+  // user's document (resume, identity docs) would be written into it for the page
+  // to read. An unguessable nonce defeats blind pre-seeding, and file-injector.js
+  // additionally refuses to inject when a selector matches more than one element,
+  // which defeats a page that copies the stamp after it's applied.
+  const scanNonce = (
+    (typeof crypto !== 'undefined' && crypto.randomUUID && crypto.randomUUID()) ||
+    `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`
+  ).replace(/-/g, '').slice(0, 16);
   let counter = 0;
   function stamp(el) {
     counter += 1;
-    const id = `impleo-upload-${counter}`;
+    const id = `impleo-upload-${scanNonce}-${counter}`;
     el.setAttribute('data-impleo-upload-id', id);
     return id;
   }
