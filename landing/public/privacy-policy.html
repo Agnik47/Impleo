@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy Policy — Impleo</title>
+    <meta
+      name="description"
+      content="Impleo collects no data. No server, no account, no analytics, no telemetry. Everything stays on your device; the only data that leaves is what you send to the AI provider you chose, using your own API key."
+    />
+    <link rel="canonical" href="https://impleo-snowy.vercel.app/privacy-policy.html" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#0B0F0E" />
+    <link rel="icon" type="image/png" href="/chameleon.png" />
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        background: #0B0F0E;
+        color: #F5F5F5;
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        line-height: 1.65;
+      }
+      main { max-width: 760px; margin: 0 auto; padding: 56px 24px 96px; }
+      h1 { font-size: 2rem; line-height: 1.15; margin: 0 0 0.5rem; }
+      h2 { font-size: 1.35rem; margin: 2.5rem 0 0.75rem; color: #28C94E; }
+      a { color: #28C94E; }
+      code { background: #171C1A; padding: 0.1em 0.35em; border-radius: 6px; font-size: 0.9em; }
+      .muted { color: #A3A3A3; }
+      .updated { color: #737373; font-size: 0.9rem; margin-bottom: 2rem; }
+      table { width: 100%; border-collapse: collapse; margin: 1rem 0; display: block; overflow-x: auto; }
+      th, td { border: 1px solid #27332D; padding: 0.6rem 0.75rem; text-align: left; vertical-align: top; font-size: 0.95rem; }
+      th { background: #121816; }
+      ul { padding-left: 1.25rem; }
+      li { margin: 0.4rem 0; }
+      .back { display: inline-block; margin-bottom: 2rem; color: #A6D91A; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="back" href="/">← Back to Impleo</a>
+      <h1>Impleo — Privacy Policy</h1>
+      <p class="updated"><strong>Last updated:</strong> 2026-07-17</p>
+
+      <h2>The short version</h2>
+      <p>
+        Impleo does not collect your data. There is no Impleo server, no Impleo
+        account, no analytics, and no telemetry. Everything Impleo knows about you is
+        stored on your own computer, inside your own browser. The only data that ever
+        leaves your machine is what you send to the AI provider <strong>you</strong> chose, using
+        <strong>your</strong> API key, at the moment you ask Impleo to generate an answer.
+      </p>
+      <p>
+        We — the developers of Impleo — cannot see your profile, your resume, your
+        answers, or your API key. Not because we promise not to look, but because
+        there is no mechanism by which that data could reach us. Impleo has no backend
+        to send it to.
+      </p>
+
+      <h2>What Impleo stores, and where</h2>
+      <p>All of it lives in your browser's local extension storage, on your device:</p>
+      <table>
+        <thead>
+          <tr><th>What</th><th>Where it's stored</th><th>Leaves your device?</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Your profile (name, contact, education, skills, goals, projects, achievements, resume text, writing sample)</td><td><code>chrome.storage.local</code></td><td>Only as part of a generation request to your chosen AI provider</td></tr>
+          <tr><td>Your API key(s)</td><td><code>chrome.storage.local</code></td><td>Only to that provider's own API, as the request's auth header</td></tr>
+          <tr><td>Which provider and model you picked</td><td><code>chrome.storage.local</code></td><td>No</td></tr>
+          <tr><td>Remembered identity values (e.g. father's name, date of birth, ID numbers)</td><td><code>chrome.storage.local</code></td><td>Only as part of a generation request, as described below</td></tr>
+          <tr><td>Learned answers (short answers you accepted or typed)</td><td><code>chrome.storage.local</code></td><td>No — these are replayed locally, without an API call</td></tr>
+          <tr><td>Q&amp;A history (last 50 approved answers)</td><td><code>chrome.storage.local</code></td><td>Only as tone/context in a generation request</td></tr>
+          <tr><td>Identity documents (resume/CV/portfolio — PDF, DOC, DOCX; up to 3)</td><td><code>IndexedDB</code></td><td><strong>Never.</strong> See "Your documents" below.</td></tr>
+          <tr><td>Which document you last chose per website</td><td><code>chrome.storage.local</code></td><td>No</td></tr>
+        </tbody>
+      </table>
+
+      <h2>What leaves your device, and to whom</h2>
+      <p>
+        Impleo makes network requests to exactly one place: <strong>the API of the AI
+        provider you configured.</strong> One of:
+      </p>
+      <ul>
+        <li><code>api.anthropic.com</code> (Anthropic / Claude)</li>
+        <li><code>generativelanguage.googleapis.com</code> (Google Gemini)</li>
+        <li><code>api.openai.com</code> (OpenAI)</li>
+        <li><code>api.groq.com</code> (Groq)</li>
+      </ul>
+      <p>
+        Only the provider you selected is ever contacted. Impleo does not call the
+        other three, and does not call any other host — no analytics endpoint, no
+        error reporting service, no update server of ours, nothing.
+      </p>
+      <p>
+        <strong>What's in that request:</strong> the questions from the form you're filling, plus
+        the relevant parts of your profile needed to answer them, plus your
+        non-sensitive remembered identity values (such as name, city, or email), plus
+        up to 3 recent Q&amp;A entries for tone. Impleo deliberately sends <em>less</em> than it could:
+      </p>
+      <ul>
+        <li><strong>Sensitive government/financial IDs — Aadhaar number, PAN number, passport number, and date of birth — are never sent to the AI provider.</strong> When a form asks for one of these, Impleo recognises the field locally and fills it from your remembered value on your own machine; the value itself is never placed in the text sent to the provider.</li>
+        <li>Your resume text and writing sample are only included when a question actually needs them (an essay question), and are omitted entirely for forms that only ask for short factual fields.</li>
+      </ul>
+      <p>
+        <strong>Your API key</strong> is sent to that provider as the request's authentication
+        header, which is the only way an API key can work. It is not sent anywhere else, ever.
+      </p>
+      <p>
+        Once your data reaches your chosen provider, <strong>that provider's privacy policy
+        governs it, not this one.</strong> What they log, retain, or train on is between you
+        and them — please read their terms. Impleo's role ends at the point the
+        request leaves your browser.
+      </p>
+
+      <h2>Your documents</h2>
+      <p>
+        Your uploaded documents (resume, CV, portfolio) are the strictest case:
+        <strong>their contents never leave your device at all.</strong>
+      </p>
+      <ul>
+        <li>They are stored as raw bytes in IndexedDB on your computer.</li>
+        <li>They are <strong>never</strong> sent to any AI provider. Impleo does not read them, parse them, or include them in any prompt.</li>
+        <li>When Impleo needs to decide <em>which</em> document to suggest for a form, it ranks them using only their <strong>filename and the label you gave them</strong> — never their contents. In the rare case it can't decide and asks the AI to break the tie, it sends only those filenames and labels.</li>
+        <li>A document is only ever attached to a web form when <strong>you click Approve</strong> on that specific document, for that specific field. Impleo has no code path that can attach a file without that click.</li>
+      </ul>
+
+      <h2>What Impleo will never do</h2>
+      <ul>
+        <li><strong>Never auto-submit a form.</strong> Impleo cannot click a submit button. This is a hard architectural rule, not a setting.</li>
+        <li><strong>Never fill a field you didn't approve.</strong> Every generated answer passes through a review step you control.</li>
+        <li><strong>Never upload a document without your approval</strong>, per the above.</li>
+        <li><strong>Never collect analytics or telemetry.</strong> There is no usage tracking of any kind.</li>
+        <li><strong>Never send your data to us.</strong> There is nowhere to send it.</li>
+      </ul>
+
+      <h2>Permissions, and why each is needed</h2>
+      <ul>
+        <li><strong><code>storage</code></strong> — to save your profile, settings, and documents on your device. This is the entire storage mechanism; without it Impleo can't remember anything.</li>
+        <li><strong><code>activeTab</code> / <code>scripting</code></strong> — to read the questions off the form you're looking at, and to fill in the answers you approved. Runs only on the tab you're on, only when you click Extract or Fill. Impleo does not scan pages in the background or run on tabs you're not actively using.</li>
+        <li><strong><code>sidePanel</code></strong> — to show Impleo's interface.</li>
+        <li><strong>Host permissions</strong> — to reach your chosen AI provider's API.</li>
+      </ul>
+
+      <h2>Deleting your data</h2>
+      <p>Everything is local, so you're in full control:</p>
+      <ul>
+        <li><strong>Individual items:</strong> Settings has a manager for remembered identity values, learned answers, and documents — each can be edited or deleted individually.</li>
+        <li><strong>Everything at once:</strong> uninstalling the Impleo extension deletes all of it. Your profile, keys, documents, and history are removed with the extension — there is no copy anywhere else, because there was never anywhere else.</li>
+      </ul>
+      <p>
+        Note that exporting your profile creates a plain-text JSON file containing your
+        profile <strong>and any remembered identity values, which can include sensitive IDs
+        such as Aadhaar number or date of birth.</strong> That file is yours and lives wherever
+        you saved it — handle it like you'd handle your resume, or more carefully.
+      </p>
+
+      <h2>Changes to this policy</h2>
+      <p>
+        If this policy changes materially, the updated version will be published here
+        with a new "Last updated" date. Because Impleo collects nothing, changes are
+        most likely to be clarifications rather than new data practices.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Impleo is an open-source project. For questions about this policy, or to report
+        a privacy concern, please
+        <a href="https://github.com/Agnik47/Impleo/issues">open an issue on the project's repository</a>.
+      </p>
+    </main>
+  </body>
+</html>

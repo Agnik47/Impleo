@@ -2,16 +2,200 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/chameleon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Primary -->
+    <title>Impleo — Fill any application form in under 10 seconds</title>
     <meta
       name="description"
-      content="Impleo — AI autofill for application forms. Reads any form, writes personalized answers in your voice, and fills them after you approve every one. Never auto-submits."
+      content="Impleo — AI autofill for application forms. Reads any form, writes personalized answers in your voice, and fills them after you approve every one. Never auto-submits. Bring your own key, runs locally, open source."
     />
-    <title>Impleo — Fill any application form in under 30 seconds</title>
+    <link rel="canonical" href="https://impleo-snowy.vercel.app/" />
+    <meta name="robots" content="index, follow" />
+    <meta name="author" content="Agnik Paul" />
+    <meta
+      name="keywords"
+      content="AI autofill, AI form filler, application form filler, fill Google Forms with AI, Chrome extension, autofill applications, hackathon application, fellowship application, scholarship application, bring your own key, local-first, open source, Impleo"
+    />
+    <meta name="theme-color" content="#0B0F0E" />
+
+    <!-- Icons -->
+    <link rel="icon" type="image/png" href="/chameleon.png" />
+    <link rel="apple-touch-icon" href="/chameleon.png" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Impleo" />
+    <meta property="og:title" content="Impleo — AI autofill, but you stay in control" />
+    <meta
+      property="og:description"
+      content="Reads any application form, writes personalized answers in your voice, and fills them after you approve every one. Never auto-submits. Bring your own key · Runs locally · Open source."
+    />
+    <meta property="og:url" content="https://impleo-snowy.vercel.app/" />
+    <meta property="og:image" content="https://impleo-snowy.vercel.app/og-image.png" />
+    <meta property="og:image:alt" content="Impleo — AI autofill for application forms" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Impleo — AI autofill, but you stay in control" />
+    <meta
+      name="twitter:description"
+      content="Reads any application form, writes personalized answers in your voice, fills only what you approve. Never auto-submits. Free & open source."
+    />
+    <meta name="twitter:image" content="https://impleo-snowy.vercel.app/og-image.png" />
+
+    <!-- Structured data: the product entity -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Impleo",
+        "applicationCategory": "BrowserApplication",
+        "operatingSystem": "Chrome",
+        "description": "AI autofill for application forms. Impleo reads any form, writes personalized answers in your voice, and fills only the answers you approve. It never auto-submits. Bring your own API key; runs locally.",
+        "url": "https://impleo-snowy.vercel.app/",
+        "image": "https://impleo-snowy.vercel.app/og-image.png",
+        "license": "https://opensource.org/licenses/MIT",
+        "author": {
+          "@type": "Person",
+          "name": "Agnik Paul"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "sameAs": ["https://github.com/Agnik47/Impleo"]
+      }
+    </script>
+
+    <!-- Structured data: FAQ (kept in sync with src/lib/constants.js FAQ) -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Does Impleo submit forms for me?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Never. You always press submit yourself — it is a hard product rule, with no code path that clicks a submit button."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is it on the Chrome Web Store yet?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Not yet — that listing is on its way. Until it lands you can clone the repo and run it locally in about five minutes. It is the same finished extension, not a preview or a trial."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is it free?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Impleo is MIT-licensed and free, whether you run it locally today or install it from the store later. Your only cost is whatever your chosen model provider charges for the calls you make."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Do I need my own API key?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes — bring a key from any supported provider (Anthropic, Gemini, OpenAI, or Groq). You only pay that provider's usage."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Where is my data stored?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Locally, on your machine, in your browser's extension storage. Nothing is hosted or shared."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Which forms are supported?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Google Forms and Luma natively, plus generic HTML forms — including radios, checkboxes, and dropdowns."
+            }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <!--
+      React (main.jsx) mounts into #root via createRoot().render(), which
+      REPLACES these children on hydration. Until then — and for any crawler or
+      reader that never runs the JS — this is the real, indexable content of the
+      page. Keep the copy in sync with src/lib/constants.js and the section files;
+      this is the SEO source-of-truth mirror of the story the SPA tells visually.
+    -->
+    <div id="root">
+      <main style="max-width: 720px; margin: 0 auto; padding: 48px 24px; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: #F5F5F5; background: #0B0F0E; line-height: 1.6;">
+        <p style="color: #28C94E; font-weight: 600; letter-spacing: 0.02em;">AI autofill, but you stay in control</p>
+        <h1 style="font-size: 2.25rem; line-height: 1.1; margin: 0.25rem 0 1rem;">Fill any application form in under 10 seconds</h1>
+        <p style="font-size: 1.125rem; color: #A3A3A3;">
+          Impleo is an AI-powered Chrome extension that reads the form, drafts every
+          answer in <em>your</em> voice, and waits for your approval before a single
+          field is touched. Hackathons, fellowships, scholarships, internships,
+          grants — done. <strong>It never auto-submits.</strong>
+        </p>
+        <p style="color: #A6D91A; font-weight: 600;">Bring your own key · Runs locally · Never auto-submits</p>
+
+        <h2>How Impleo works — five steps</h2>
+        <ol>
+          <li><strong>Detect.</strong> Open the side panel on any form page.</li>
+          <li><strong>Extract.</strong> Impleo reads every question and field type.</li>
+          <li><strong>Generate.</strong> Personalized answers in your voice — one AI call.</li>
+          <li><strong>Review.</strong> Accept · Edit · Regenerate · Skip — every answer.</li>
+          <li><strong>Fill.</strong> Only approved answers are written. Submit is never touched.</li>
+        </ol>
+
+        <h2>Privacy-first and local</h2>
+        <p>
+          Impleo runs on your machine. Your profile and API keys live in your
+          browser's local storage, single-user. Your data is only ever sent to the
+          AI model provider you chose — never to us, because there is no Impleo
+          server, account, analytics, or telemetry. Sensitive government/financial
+          IDs are filled locally and never sent to the AI provider.
+        </p>
+
+        <h2>Supported forms and AI providers</h2>
+        <p>
+          Works on <strong>Google Forms</strong> and <strong>Luma</strong> natively,
+          plus generic HTML forms — including radios, checkboxes, and dropdowns.
+          Bring your own key from <strong>Anthropic (Claude)</strong>,
+          <strong>Google Gemini</strong>, <strong>OpenAI</strong>, or
+          <strong>Groq</strong>.
+        </p>
+
+        <h2>Frequently asked questions</h2>
+        <dl>
+          <dt><strong>Does Impleo submit forms for me?</strong></dt>
+          <dd>No. Never. You always press submit yourself — it is a hard product rule, with no code path that clicks a submit button.</dd>
+          <dt><strong>Is it on the Chrome Web Store yet?</strong></dt>
+          <dd>Not yet — that listing is on its way. Until it lands you can clone the repo and run it locally in about five minutes.</dd>
+          <dt><strong>Is it free?</strong></dt>
+          <dd>Yes. Impleo is MIT-licensed and free. Your only cost is whatever your chosen model provider charges for the calls you make.</dd>
+          <dt><strong>Do I need my own API key?</strong></dt>
+          <dd>Yes — bring a key from any supported provider (Anthropic, Gemini, OpenAI, or Groq).</dd>
+          <dt><strong>Where is my data stored?</strong></dt>
+          <dd>Locally, on your machine, in your browser's extension storage. Nothing is hosted or shared.</dd>
+          <dt><strong>Which forms are supported?</strong></dt>
+          <dd>Google Forms and Luma natively, plus generic HTML forms — including radios, checkboxes, and dropdowns.</dd>
+        </dl>
+
+        <p>
+          Impleo is free and open source (MIT).
+          <a href="https://github.com/Agnik47/Impleo" style="color: #28C94E;">View Impleo on GitHub</a>.
+        </p>
+      </main>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
