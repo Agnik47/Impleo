@@ -101,11 +101,9 @@ Every card shows a confidence badge and a live regenerate box — steer the tone
 
 <div align="center">
 
-<video src="IMages/Impleo%20Use.mp4" autoplay muted loop playsinline controls width="100%">
-  Your browser doesn't support inline video — <a href="IMages/Impleo%20Use.mp4">download the demo</a> instead.
-</video>
+<img src="IMages/Impleo%20Use.gif" alt="Impleo demo — extract, review, and fill a real form without ever touching Submit" width="100%" />
 
-<sub>A minute in — extract, review, and fill a real form without Impleo ever touching Submit.</sub>
+<sub>A minute in — extract, review, and fill a real form without Impleo ever touching Submit. <a href="IMages/Impleo%20Use.mp4">Watch the full-quality MP4</a>.</sub>
 
 </div>
 
