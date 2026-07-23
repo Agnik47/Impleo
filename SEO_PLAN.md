@@ -28,14 +28,27 @@ what actually gets you crawled and ranked.
 
 ## 2. Keyword strategy (be realistic)
 
-### Tier 1 — Branded (win these; low competition)
-`impleo` · `impleo extension` · `impleo chrome` · `impleo form filler` · `impleo github`
+### ⚠️ Reality check (observed 2026-07-24)
+A Google search for `impleo form fillup ai` returned **impleo.ai — "Impleo AI", an
+established SAP-consultant AI copilot** — ranking #1 for both "impleo" and our exact
+query. Google's AI Overview names them as the recognized "Impleo" entity and does not
+mention us at all. Takeaways:
+- **We do NOT yet appear** because the site is not indexed — nobody has submitted it to
+  Google Search Console (see §5). This is the blocker, not a code problem. Confirm with a
+  `site:impleo-snowy.vercel.app` search: currently returns nothing = not indexed.
+- **Bare "impleo" is contested.** impleo.ai owns the exact `.ai` domain and an established
+  entity; outranking them for the single word "impleo" from a `vercel.app` subdomain is
+  slow-to-unlikely. Don't target it head-on.
+- **A custom domain is the biggest branding lever** (deferred by choice for now). Revisit
+  `getimpleo.com` / `useimpleo.com` / `impleo.app` if branded ranking stalls.
 
-> ⚠️ "Impleo" is a Latin word and is used by unrelated companies (a UK staffing firm, a
-> document-management product). Ranking for it isn't automatic — we win by establishing
-> Impleo as a distinct **entity**: identical name + description + logo across the landing
-> page, GitHub, and (later) the Chrome Web Store, all cross-linking, backed by the
-> `SoftwareApplication` structured data already on the site.
+### Tier 1 — Branded-product (the realistic branded wins)
+Pair "impleo" with the product category so we don't collide with the SAP tool:
+`impleo form filler` · `impleo autofill` · `impleo chrome extension` ·
+`impleo form filler extension` · `impleo github`
+> The `<title>`, H1, and lead paragraph now pair "Impleo" with "form filler / autofill /
+> Chrome extension" specifically to win these, backed by the `SoftwareApplication`
+> structured data. This is where branded traffic realistically comes from near-term.
 
 ### Tier 2 — Long-tail intent (the real traffic; achievable)
 - `AI autofill for application forms`
