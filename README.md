@@ -187,32 +187,23 @@ Every card shows a confidence badge and a live regenerate box — steer the tone
 
 ## Architecture
 
-Impleo is deliberately two local pieces talking to each other — no hosted backend, no multi-tenant server, one instance per person.
+Impleo is a single local piece — a browser extension — with no hosted backend, no local server, and no multi-tenant infrastructure. One instance per person, everything running inside your own browser.
 
 ```mermaid
 flowchart TB
-    subgraph Browser["Chrome Browser"]
-        SP["Side Panel — React + Tailwind (Vite)<br/>onboarding · review cards · settings"]
+    subgraph Browser["Chrome Browser — everything runs here"]
+        SP["Side Panel — React + Tailwind (Vite)<br/>onboarding · review cards · settings<br/>prompt builder + provider adapter (src/sidepanel/lib/)"]
         CS["Content Script — injected on demand<br/>extractGoogleForm / extractLumaForm / extractGenericForm<br/>fillGoogleForm / fillLumaForm / fillGenericForm"]
-    end
-
-    subgraph Local["Local Machine — server/ (Express + SQLite)"]
-        API["REST API<br/>profile · settings · qa-history · identity-memory · generate"]
-        DB[("SQLite<br/>profile · qaHistory · identityMemory · learnedAnswers · apiKey")]
-        ORCH["AI Orchestration Layer<br/>prompt context builder + provider adapter"]
+        ST[("chrome.storage.local + IndexedDB<br/>profile · qaHistory · identityMemory · learnedAnswers · apiKey · documents")]
     end
 
     PROV(["Your chosen provider<br/>Anthropic · Gemini · OpenAI · Groq"])
 
     SP -- "chrome.scripting.executeScript" --> CS
     CS -- "extracted form schema" --> SP
-    SP -- "fetch() to localhost" --> API
-    API --> DB
-    API --> ORCH
-    ORCH -- "single structured-output call" --> PROV
-    PROV -- "answers + confidence" --> ORCH
-    ORCH --> API
-    API -- "review payload" --> SP
+    SP -- "reads / writes locally" --> ST
+    SP -- "single structured-output call, direct HTTPS" --> PROV
+    PROV -- "answers + confidence" --> SP
     SP -- "approved answers only" --> CS
     CS -- "writes fields, never clicks Submit" --> Page(["Live form on the page"])
 ```
@@ -220,10 +211,10 @@ flowchart TB
 **Layers, and why each exists:**
 
 - **Content scripts** are self-contained, serialized functions injected only on the active tab, only on demand — no persistent background scanning, no broad `content_scripts` manifest entry.
-- **The side panel** never sees your API key. It only talks to your own local server over `fetch()`.
-- **`server/` is the only thing** allowed to hold your API key or call an external model provider — the extension itself never sees or transmits it anywhere else.
+- **The side panel is the whole application.** Its `lib/` builds the prompt, calls your chosen provider directly over HTTPS, and reads/writes all local storage — there is no server in between.
+- **Your API key** is held in `chrome.storage.local` and sent only to the provider you chose, as that request's authentication header — never to any Impleo backend, because there is none.
 - **The review pipeline and human approval gate** sit structurally between generation and fill: the fill function only ever receives the subset of answers you explicitly approved.
-- **Identity memory + learned answers** persist in SQLite so recurring fields (email, CTC, notice period, "why this role") get smarter, not just faster, over time.
+- **Identity memory + learned answers** persist in `chrome.storage.local` (documents in IndexedDB) so recurring fields (email, CTC, notice period, "why this role") get smarter, not just faster, over time.
 
 <br />
 
@@ -233,12 +224,13 @@ flowchart TB
 
 Impleo is built local-first because application answers are personal — resumes, salary expectations, government IDs, life story. That data should never leave a machine you don't control.
 
-- ✅ **Local processing** — the server that talks to your AI provider runs on `localhost`, not in the cloud.
+- ✅ **Local processing** — everything runs inside your browser. There is no server, local or hosted; the only network call is the one you configured, straight to your chosen provider.
 - ✅ **User-owned API keys** — you supply your own key for the provider you trust; Impleo never ships a shared key or proxies your calls through anyone's infrastructure.
-- ✅ **No server storage** — there is no Impleo-hosted backend. Your profile, history, and identity memory live in a SQLite file on your disk.
+- ✅ **No backend storage** — there is no Impleo-hosted backend. Your profile, history, and identity memory live in your browser's own storage (`chrome.storage.local`), and your documents in IndexedDB, on your device.
+- ✅ **Sensitive IDs stay local** — government/financial IDs (Aadhaar, PAN, passport, date of birth) are recognized by field label and filled from your remembered value locally; the value is never placed in the text sent to the AI provider.
 - ✅ **No tracking, no analytics, no telemetry.**
-- ✅ **No data selling.** There is no business model that depends on your data — Impleo doesn't have a server to sell it from.
-- ✅ **No hidden uploads.** The only network call Impleo ever makes on your behalf is the one you configured, to the provider you chose, when you click Extract.
+- ✅ **No data selling.** There is no business model that depends on your data — Impleo has no backend to collect it in.
+- ✅ **No hidden uploads.** The only network call Impleo ever makes on your behalf is the one you configured, to the provider you chose, when you click Generate.
 
 <br />
 
@@ -256,15 +248,12 @@ Impleo is built local-first because application answers are personal — resumes
 git clone https://github.com/Agnik47/Impleo.git
 cd Impleo
 
-cd server && npm install && cd ..
-cd extension && npm install && npm run build && cd ..
-
-cd server && npm start
+cd extension && npm install && npm run build
 ```
 
-Then load `extension/dist` as an unpacked extension via `chrome://extensions` (enable **Developer mode** → **Load unpacked**), and enter your API key in the side panel's **Settings** — Impleo runs a live test call before saving it, so you know immediately if the key works.
+Then load `extension/dist` as an unpacked extension via `chrome://extensions` (enable **Developer mode** → **Load unpacked**), and enter your API key in the side panel's **Settings** — Impleo runs a live test call before saving it, so you know immediately if the key works. There is no server to start.
 
-> **Using an AI coding agent?** Hand it **[`INSTALLATION.md`](INSTALLATION.md)** directly — it's written as a step-by-step runbook an agent can execute unattended (clone, install, build, start the server, verify), with the two steps that require a human — loading the unpacked extension and entering your API key — clearly called out. It also covers native build prerequisites, port conflicts, and common setup failures in more detail than the summary above.
+> **Using an AI coding agent?** Hand it **[`INSTALLATION.md`](INSTALLATION.md)** directly — it's written as a step-by-step runbook an agent can execute unattended (clone, install, build, verify), with the two steps that require a human — loading the unpacked extension and entering your API key — clearly called out. It also covers common setup failures in more detail than the summary above.
 
 <br />
 
@@ -283,13 +272,14 @@ Model IDs are never hardcoded to a fixed release — you can type any model stri
 
 ### Local storage behavior
 
-All persistent state lives in `server/data/*.db` (SQLite, gitignored) and is never synced anywhere:
+All persistent state lives in your browser's own storage (`chrome.storage.local`, plus IndexedDB for documents) and is never synced anywhere:
 
 - **Profile** — personal info, links, education, skills, projects, resume text, writing samples
 - **Q&A history** — last 50 approved question/answer pairs, used as few-shot context
 - **Identity memory** — canonical values (email, phone, CTC, notice period, etc.) reused across every form
 - **Learned answers** — previously accepted answers, matched by normalized question text
-- **API key** — stored once via onboarding/Settings, read only by `server/`, never sent to the extension
+- **Documents** — resume/CV/portfolio files, stored as raw bytes in IndexedDB; their contents never leave your device
+- **API key** — stored once via onboarding/Settings in `chrome.storage.local`, sent only to your chosen provider as the request's auth header, never to any Impleo backend
 
 ### Optional settings
 
@@ -304,25 +294,17 @@ impleo/
 ├── extension/                   Chrome MV3 extension (Vite + React + Tailwind)
 │   ├── manifest.json             Permissions, entry points, icons
 │   ├── background.js             Minimal service worker (side panel behavior only)
-│   ├── content-scripts/          Self-contained extractors/fillers per platform
-│   │   ├── google-forms.js
-│   │   ├── luma.js
-│   │   ├── generic-extractor.js
-│   │   └── generic-filler.js
+│   ├── content-scripts/          Self-contained extractors/fillers, injected on demand
 │   └── src/sidepanel/            React side panel — onboarding, review flow, settings
 │       ├── App.jsx                View routing
 │       ├── ReviewFlow.jsx         Extract → review → fill state machine
-│       └── components/            Review cards, buttons, UI primitives
-│
-├── server/                      Local Express + SQLite backend
-│   └── src/
-│       ├── index.js               Express app entry
-│       ├── db.js                  SQLite connection + schema (sole DB access point)
-│       ├── providers.js           Anthropic / Gemini / OpenAI / Groq adapters
-│       ├── promptContext.js       Builds the profile + schema + history prompt
-│       ├── fieldRegistry.js       Canonical identity-memory field definitions
-│       └── routes/                profile · settings · qa-history · identity-memory ·
-│                                   learned-answers · import-export · generate · test-key
+│       ├── components/            Review cards, buttons, UI primitives
+│       └── lib/                   The app's brain (client-side, no server):
+│                                   providers.js — Anthropic/Gemini/OpenAI/Groq adapters
+│                                   promptContext.js — builds profile + schema + history prompt
+│                                   generate.js — classify + generate orchestration
+│                                   fieldRegistry.js — canonical identity-memory fields
+│                                   storage.js / documentStore.js — chrome.storage + IndexedDB
 │
 ├── landing/                     Marketing site (Vite + React)
 │

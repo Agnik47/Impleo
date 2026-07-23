@@ -59,8 +59,8 @@ export const PIPELINE_STEPS = [
 ];
 
 export const PRIVACY_PLEDGES = [
-  'Runs on your machine — a local server, not our cloud.',
-  'Your profile and keys live in a local database, single-user.',
+  'Runs on your machine — inside your browser, not our cloud.',
+  'Your profile and keys live in local browser storage, single-user.',
   'Your data is only ever sent to the model provider you chose.',
 ];
 
@@ -91,12 +91,11 @@ export const GROWTH_STAGES = [
   },
 ];
 
-// Verbatim from INSTALLATION.md's quick start. `npm start` blocks, so it has to
-// be the last line of its own command — don't chain anything after it.
+// Verbatim from INSTALLATION.md's quick start — clone, then build the extension.
+// The build is the final step; load extension/dist as an unpacked extension after.
 export const QUICK_START_LINES = [
   'git clone https://github.com/Agnik47/Impleo.git && cd Impleo',
-  'cd server && npm install && cd ../extension && npm install && npm run build',
-  'cd ../server && npm start',
+  'cd extension && npm install && npm run build',
 ];
 
 export const QUICK_START_COMMAND = QUICK_START_LINES.join('\n');
@@ -179,7 +178,7 @@ export const FAQ = [
   ],
   [
     'Where is my data stored?',
-    'Locally, on your machine, in a single-user database owned by a local server. Nothing is hosted or shared.',
+    'Locally, on your machine, in your browser\'s own extension storage. Nothing is hosted or shared.',
   ],
   [
     'Which forms are supported?',
