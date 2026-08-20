@@ -266,7 +266,7 @@ Then load `extension/dist` as an unpacked extension via `chrome://extensions` (e
 | **Anthropic** | `anthropic` | `claude-sonnet-5` |
 | **Google Gemini** | `gemini` | `gemini-2.0-flash` |
 | **OpenAI** | `openai` | `gpt-4o-mini` |
-| **Groq** | `groq` | `llama-3.3-70b-versatile` |
+| **Groq** | `groq` | `openai/gpt-oss-120b` |
 
 Model IDs are never hardcoded to a fixed release — you can type any model string your account has access to under Settings, and that exact string is sent on every call.
 

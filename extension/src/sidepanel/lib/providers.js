@@ -32,7 +32,11 @@ export const DEFAULT_MODELS = {
   anthropic: 'claude-sonnet-5',
   gemini: 'gemini-2.0-flash',
   openai: 'gpt-4o-mini',
-  groq: 'llama-3.3-70b-versatile',
+  // Groq decommissioned its whole Llama/Mixtral/Gemma lineup (llama-3.3-70b-
+  // versatile included) some time before 2026-08-20 — every model above is
+  // now `model_not_found` or `model_decommissioned`. openai/gpt-oss-120b is
+  // the closest current replacement for general-purpose use.
+  groq: 'openai/gpt-oss-120b',
 };
 
 function apiError(status, message) {
