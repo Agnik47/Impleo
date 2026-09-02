@@ -1,0 +1,67 @@
+{
+  "name": "fellowship-generic",
+  "platform": "generic",
+  "source": "SYNTHETIC — replace with a real capture (see test/fixtures/README.md)",
+  "pageTitle": "Apply — Tandem Fellowship 2026",
+  "pageUrl": "https://tandemfellowship.example.org/apply",
+  "schema": [
+    {
+      "id": "f-1",
+      "questionText": "Full name",
+      "fieldType": "text",
+      "options": [],
+      "required": true,
+      "labelConfidence": "high"
+    },
+    {
+      "id": "f-2",
+      "questionText": "Email address",
+      "fieldType": "text",
+      "options": [],
+      "required": true,
+      "labelConfidence": "high"
+    },
+    {
+      "id": "f-3",
+      "questionText": "Which track are you applying to?",
+      "fieldType": "dropdown",
+      "options": ["Developer Tools", "Civic Technology", "Climate", "Health"],
+      "required": true,
+      "labelConfidence": "high"
+    },
+    {
+      "id": "f-4",
+      "questionText": "Why do you want to join this fellowship?",
+      "fieldType": "textarea",
+      "options": [],
+      "required": true,
+      "description": "Max 150 words. Tell us what you'd use the time for, not why fellowships are good.",
+      "labelConfidence": "high"
+    },
+    {
+      "id": "f-5",
+      "questionText": "Describe a project you built and what you learned from it.",
+      "fieldType": "textarea",
+      "options": [],
+      "required": true,
+      "description": "200 words maximum.",
+      "labelConfidence": "high"
+    },
+    {
+      "id": "f-6",
+      "questionText": "Are you available for the full 12-week programme?",
+      "fieldType": "radio",
+      "options": ["Yes", "No", "Partially"],
+      "required": true,
+      "labelConfidence": "high"
+    },
+    {
+      "id": "f-7",
+      "questionText": "Upload your resume",
+      "fieldType": "upload",
+      "options": [],
+      "required": true,
+      "labelConfidence": "high"
+    }
+  ]
+}

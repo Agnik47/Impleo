@@ -1,0 +1,75 @@
+{
+  "name": "hackathon-shortform",
+  "platform": "generic",
+  "source": "SYNTHETIC — replace with a real capture (see test/fixtures/README.md)",
+  "pageTitle": "Register — BuildBharat Hackathon 2026",
+  "pageUrl": "https://buildbharat.example.com/register",
+  "note": "Mostly identity fields. Exercises the deterministic-routing fast path: most of these should never reach the model at all, and the eval should show a low generated-field count.",
+  "schema": [
+    {
+      "id": "h-1",
+      "questionText": "First Name",
+      "fieldType": "text",
+      "options": [],
+      "required": true,
+      "labelConfidence": "high"
+    },
+    {
+      "id": "h-2",
+      "questionText": "Last Name",
+      "fieldType": "text",
+      "options": [],
+      "required": true,
+      "labelConfidence": "high"
+    },
+    {
+      "id": "h-3",
+      "questionText": "Email",
+      "fieldType": "text",
+      "options": [],
+      "required": true,
+      "labelConfidence": "high"
+    },
+    {
+      "id": "h-4",
+      "questionText": "Mobile Number",
+      "fieldType": "text",
+      "options": [],
+      "required": true,
+      "labelConfidence": "high"
+    },
+    {
+      "id": "h-5",
+      "questionText": "GitHub Profile",
+      "fieldType": "text",
+      "options": [],
+      "required": false,
+      "labelConfidence": "high"
+    },
+    {
+      "id": "h-6",
+      "questionText": "T-shirt size",
+      "fieldType": "dropdown",
+      "options": ["S", "M", "L", "XL", "XXL"],
+      "required": true,
+      "labelConfidence": "high"
+    },
+    {
+      "id": "h-7",
+      "questionText": "How many hackathons have you participated in?",
+      "fieldType": "text",
+      "options": [],
+      "required": false,
+      "labelConfidence": "high"
+    },
+    {
+      "id": "h-8",
+      "questionText": "What do you want to build this weekend?",
+      "fieldType": "textarea",
+      "options": [],
+      "required": true,
+      "description": "Two or three sentences is fine.",
+      "labelConfidence": "high"
+    }
+  ]
+}
