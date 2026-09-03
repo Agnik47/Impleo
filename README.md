@@ -37,6 +37,14 @@ Existing tools don't solve this:
 
 AI-generated answers should never be blindly submitted. A wrong fact, an off-tone sentence, or a hallucinated detail in a scholarship essay isn't a bug you can quietly ship a fix for — it's already been read by a human on the other side.
 
+<div align="center">
+
+<video src="IMages/Problem.mp4" controls width="100%"></video>
+
+<sub>The problem, in under a minute.</sub>
+
+</div>
+
 <br />
 
 ## The Solution
