@@ -39,9 +39,9 @@ AI-generated answers should never be blindly submitted. A wrong fact, an off-ton
 
 <div align="center">
 
-<video src="IMages/Problem.mp4" controls width="100%"></video>
+<img src="IMages/Problem.gif" alt="Impleo — the problem: retyping the same application answers by hand, form after form" width="100%" />
 
-<sub>The problem, in under a minute.</sub>
+<sub>The problem, in under a minute. <a href="IMages/Problem.mp4">Watch the full-quality MP4</a>.</sub>
 
 </div>
 
