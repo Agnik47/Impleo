@@ -3,8 +3,18 @@ dist/
 server/data/*.db
 server/data/*.db-*
 .env
-test/
+
+# The ROOT test/ only — standalone Python live-API scratch scripts, plus a
+# local .env with real provider keys. Anchored with a leading slash on purpose:
+# an unanchored `test/` also matched `extension/test/`, which silently kept the
+# entire extension test suite out of git.
+/test/
 docs/
+
+# Eval reports contain generated answers. Harmless with the synthetic fixture
+# profile, but anyone swapping in their own profile for a local run would be
+# committing their own PII.
+extension/test/eval/reports/
 
 # Contains real PII (email/phone/LinkedIn) — kept locally only, never tracked.
 IMages/Profile Setup.png

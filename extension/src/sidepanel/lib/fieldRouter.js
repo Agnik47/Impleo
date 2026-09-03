@@ -46,6 +46,21 @@ function containsPhrase(haystack, phrase) {
   );
 }
 
+// Splits a full name on its first whitespace run: everything before is the
+// first name, everything after (if any) is the last name. A naive heuristic —
+// wrong for some real names (multi-word first names, single-word names,
+// non-Western order) — which is exactly why the profile's explicit
+// firstName/lastName fields always win over this when they're set (see
+// profileValueForCanonical below); this only supplies the pre-fill default in
+// Onboarding and the fallback for profiles saved before those fields existed.
+export function splitName(fullName) {
+  const trimmed = String(fullName || '').trim();
+  if (!trimmed) return { firstName: '', lastName: '' };
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+}
+
 // Canonical registry keys whose value we can pull straight from the freeform
 // profile object. Every OTHER canonical key (father_name, aadhaar, ...) only
 // ever comes from identity_memory — never fabricated from the profile.
@@ -53,6 +68,10 @@ function profileValueForCanonical(key, profile) {
   switch (key) {
     case 'full_name':
       return profile?.personal?.name || '';
+    case 'first_name':
+      return profile?.personal?.firstName || splitName(profile?.personal?.name).firstName;
+    case 'last_name':
+      return profile?.personal?.lastName || splitName(profile?.personal?.name).lastName;
     case 'email':
       return profile?.personal?.email || '';
     case 'phone':

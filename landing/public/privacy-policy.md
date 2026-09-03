@@ -1,6 +1,6 @@
 # Impleo — Privacy Policy
 
-**Last updated:** 2026-07-17
+**Last updated:** 2026-08-29
 
 ## The short version
 
@@ -29,6 +29,7 @@ All of it lives in your browser's local extension storage, on your device:
 | Q&A history (last 50 approved answers) | `chrome.storage.local` | Only as tone/context in a generation request |
 | Identity documents (resume/CV/portfolio — PDF, DOC, DOCX; up to 3) | `IndexedDB` | **Never.** See "Your documents" below. |
 | Which document you last chose per website | `chrome.storage.local` | No |
+| A short description of the page you're applying to | Not stored — read at extraction time and discarded | Only as part of a generation request, and only while the setting is on |
 
 ## What leaves your device, and to whom
 
@@ -58,6 +59,21 @@ could:
 - Your resume text and writing sample are only included when a question
   actually needs them (an essay question), and are omitted entirely for forms
   that only ask for short factual fields.
+
+**Page context.** The request also includes a short description of the page
+you're applying to: its title, the organisation's name, the main heading, and
+the most substantial paragraph above the form — about 1,200 characters at most.
+This is the only page content Impleo sends; everything else in the request is
+your own profile and the form's own questions.
+
+It exists because without it the AI is given your questions and nothing else,
+so an answer to "why do you want to join?" has no idea what you're joining, and
+comes out generic.
+
+You can turn it off in **Settings → AI provider → "Send page context with my
+questions"**. It is on by default. When it's off, Impleo does not read the page
+description at all — it isn't read and then withheld. If you're filling a form
+on a page whose contents are confidential, turn this off before extracting.
 
 **Your API key** is sent to that provider as the request's authentication
 header, which is the only way an API key can work. It is not sent anywhere

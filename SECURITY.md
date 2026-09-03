@@ -57,6 +57,36 @@ version. We aim to acknowledge within a few days.
 - **HTTPS-only egress** to the four provider hosts; the API key travels only in the
   documented auth header, nowhere else.
 
+## What leaves your machine, and when
+
+Impleo has no backend and no telemetry. The only outbound requests go to the one
+AI provider you configured, and only when you click Extract or Regenerate. Those
+requests carry:
+
+1. **The form's questions** — labels, help text, and option lists, as extracted
+   from the page.
+2. **Relevant parts of your profile** — the cheap basics always; resume,
+   projects, writing sample and past answers only when the form actually has a
+   prose question to ground (`promptContext.js`). Sensitive government and
+   financial IDs are **never** included (see the data-minimization item above).
+3. **A short description of the page you're applying to** — *added 2026-08-29,
+   and the only category here that is page content rather than your own data.*
+   `content-scripts/page-context.js` reads the page title, the organisation
+   name, the `<h1>`, and the most substantial paragraph above the form, capped
+   at ~1,200 characters total.
+
+   **Why:** without it the model is told the questions and nothing else, so
+   "why do you want to join?" is answered with no idea what "join" refers to —
+   which is what makes such answers generic.
+
+   **Control:** Settings → AI provider → "Send page context with my questions".
+   Defaults **on**. When off, the page is never read at all — not read and
+   discarded. It is deliberately not a full-page scrape: it collects the page's
+   own self-description, not its content, and it is capped.
+
+   If you are filling a form on a page that is itself confidential, turn this
+   off before extracting.
+
 ## Accepted risks / decisions
 
 - **Data at rest is not encrypted.** API keys and remembered identity values live

@@ -7,6 +7,7 @@
 import { isValidKey, isRiskClusterKey, isSensitiveKey, labelFor, registryPromptList } from './fieldRegistry.js';
 import { routeField, buildResolvedAnswer } from './fieldRouter.js';
 import { selectContext } from './promptContext.js';
+import { bannedPhraseInstruction } from './voiceRules.js';
 import { estimateTokens, computeMaxTokens, logTokenMetrics } from './tokens.js';
 import { getActiveProviderConfig } from './settings.js';
 import { getProfile } from './profile.js';
@@ -20,6 +21,22 @@ import { getLearnedAnswersMap } from './learnedAnswers.js';
 // qaHistory.js's own MAX_ENTRIES (50, the storage cap): getQaHistory() already
 // returns newest-first, so this just takes the top slice of that.
 const MAX_HISTORY = 10;
+
+// Sampling temperature. Nothing here sent one before, so every call ran at
+// whatever the provider defaults to — usually 1.0, which is high for work that
+// is half strict-JSON and half grounded prose.
+//
+// The tension is real: the same response has to contain option strings copied
+// verbatim and canonical keys chosen from a fixed list (both want LOW
+// temperature) alongside prose that shouldn't read like a form letter (which
+// wants some warmth). `mixed` is the compromise for today's single combined
+// call. When the classification and prose passes are split, each gets the
+// value it actually wants instead of the average of the two.
+const TEMPERATURE = {
+  mixed: 0.5,
+  classification: 0.2,
+  prose: 0.7,
+};
 
 async function getRecentQaHistory() {
   return (await getQaHistory()).slice(0, MAX_HISTORY);
@@ -44,7 +61,48 @@ async function getRecentQaHistory() {
 // registry/canonical-key block — omitted for forms whose generative fields
 // are all clearly prose/choice (nothing identity-like to classify), saving
 // those calls the registry's tokens.
-function buildSystemPrompt(profile, identityMemory, contextText, includeClassification, editing = false) {
+// Renders what the user is applying TO. Before this existed the model was
+// given the questions and nothing else, so "why do you want to join?" was
+// answered with no referent for "join" — the structural reason those answers
+// came back as generic enthusiasm.
+//
+// The guard clause is the important half. This is new grounding surface, and
+// grounding surface is where fabrication starts: a model told the org's name
+// will happily infer a mission statement for it. Rule 9 forbids inventing
+// facts about the APPLICANT; this extends the same bound to the organisation.
+function buildOpportunityBlock(opportunity) {
+  if (!opportunity) return '';
+  const { title, orgName, headline, aboutText, url } = opportunity;
+  const lines = [
+    orgName ? `Organisation: ${orgName}` : '',
+    title ? `Page title: ${title}` : '',
+    headline && headline !== title ? `Heading: ${headline}` : '',
+    url ? `URL: ${url}` : '',
+    aboutText ? `What the page says about it: ${aboutText}` : '',
+  ].filter(Boolean);
+  if (lines.length === 0) return '';
+
+  return `
+
+WHAT THEY ARE APPLYING TO:
+${lines.join('\n')}
+
+How to use this: make answers specific to THIS opportunity rather than generic.
+If the question is "why do you want to join", the answer should be about this
+programme in particular. Do NOT invent facts about the organisation that aren't
+stated above — no made-up mission statements, founding dates, staff names, or
+programme details. If the page says little, write about what the applicant
+wants from it rather than flattering an organisation you don't actually know.`;
+}
+
+function buildSystemPrompt(
+  profile,
+  identityMemory,
+  contextText,
+  includeClassification,
+  editing = false,
+  opportunity = null
+) {
   // Data minimization: sensitive government/financial IDs (Aadhaar, PAN, passport,
   // date of birth — isSensitiveKey) are DELIBERATELY withheld from the prompt sent
   // to the third-party AI provider. The model does not need their values to do its
@@ -104,7 +162,9 @@ PROFILE:
 ${contextText}
 
 REMEMBERED IDENTITY (the user entered these once; reuse them verbatim when a field means the same thing):
-${memoryBlock}${withheldNote}${classificationBlock}
+${memoryBlock}${withheldNote}${buildOpportunityBlock(opportunity)}${classificationBlock}
+
+${bannedPhraseInstruction()}
 
 Answering rules:
 - fieldType "text", "textarea": write a personalized answer in the person's voice (match the writing sample's tone if provided).
@@ -112,6 +172,8 @@ Answering rules:
 - fieldType "radio", "checkbox_single", "dropdown": the answer must be exactly one string copied verbatim from that question's "options" array — never paraphrase an option. If nothing fits well, pick the closest option rather than leaving it blank.
 - fieldType "checkbox" (multi-select): the answer must be an array of one or more strings, each copied verbatim from "options".
 - Static personal-info questions (name, email, phone, location) should be copied verbatim from the profile, not paraphrased.
+- A question may include a "description": supplementary help text shown on the form alongside its title (e.g. a word limit, what to cover, why it's being asked). Use it to understand what's really being asked, but never copy the description text itself into the answer.
+- A question may include "labelConfidence": "low", meaning the extracted question text may be unreliable (pulled from a placeholder or a generic HTML attribute rather than a real label) — it might not describe a real application question at all. Treat such a field's meaning with caution: prefer a short, safely generic answer over a specific, confident-sounding one, and set "confidence" no higher than "low" for it.
 - Set "confidence" to "high" only when the profile/remembered identity has solid, specific grounding for that answer; "medium" for a reasonable but more general answer; "low" when there is little relevant material and the answer is necessarily generic.
 ${instructionBullet}
 
@@ -228,7 +290,14 @@ function rethrowGenerationError(err) {
   throw err;
 }
 
-export async function generateAnswers(formSchema) {
+/**
+ * @param {Array}  formSchema   the extracted fields
+ * @param {object} [opportunity] what the user is applying to, from
+ *   content-scripts/page-context.js. Optional: absent means the caller
+ *   couldn't read the page or the user turned the setting off, and answers
+ *   fall back to the previous behaviour of being written blind.
+ */
+export async function generateAnswers(formSchema, opportunity = null) {
   if (!Array.isArray(formSchema) || formSchema.length === 0) {
     throw new Error('formSchema must be a non-empty array');
   }
@@ -287,9 +356,18 @@ export async function generateAnswers(formSchema) {
     return withholdHint ? q : { ...q, canonicalKey: m.canonicalKey };
   });
 
-  const systemPrompt = buildSystemPrompt(profile, identityMemory, profileText, includeClassification);
+  const systemPrompt = buildSystemPrompt(
+    profile,
+    identityMemory,
+    profileText,
+    includeClassification,
+    false,
+    opportunity
+  );
   const userContent = JSON.stringify({ formSchema: annotatedSchema, recentQaHistory: history });
-  const maxTokens = computeMaxTokens(generativeFields.length);
+  // Sized off the actual fields, not their count: an essay and a radio button
+  // need budgets an order of magnitude apart (see tokens.js).
+  const maxTokens = computeMaxTokens(generativeFields, { provider: active.provider.id });
 
   try {
     const text = await active.provider.chat({
@@ -298,6 +376,7 @@ export async function generateAnswers(formSchema) {
       systemPrompt,
       userContent,
       maxTokens,
+      temperature: TEMPERATURE.mixed,
     });
     const raw = parseAnswerArray(text);
     const byId = new Map(raw.map((a) => [a.id, a]));
@@ -329,7 +408,7 @@ export async function generateAnswers(formSchema) {
   }
 }
 
-export async function regenerateAnswer(question, instruction, currentAnswer = null) {
+export async function regenerateAnswer(question, instruction, currentAnswer = null, opportunity = null) {
   if (!question || typeof question !== 'object' || !question.id) {
     throw new Error('question is required');
   }
@@ -374,13 +453,20 @@ export async function regenerateAnswer(question, instruction, currentAnswer = nu
     ...(currentAnswerText != null ? { currentAnswer: currentAnswerText } : {}),
   };
 
-  const systemPrompt = buildSystemPrompt(profile, identityMemory, profileText, includeClassification, hasInstruction);
+  const systemPrompt = buildSystemPrompt(
+    profile,
+    identityMemory,
+    profileText,
+    includeClassification,
+    hasInstruction,
+    opportunity
+  );
   const userContent = JSON.stringify({
     formSchema: [annotatedQuestion],
     recentQaHistory: history,
     ...(hasInstruction ? { instruction } : {}),
   });
-  const maxTokens = computeMaxTokens(1);
+  const maxTokens = computeMaxTokens([question], { provider: active.provider.id });
 
   try {
     const text = await active.provider.chat({
@@ -389,6 +475,10 @@ export async function regenerateAnswer(question, instruction, currentAnswer = nu
       systemPrompt,
       userContent,
       maxTokens,
+      // A bare re-roll wants genuine variation — the user asked for a
+      // different answer, so returning a near-identical one is a failure.
+      // An instructed edit wants obedience, not creativity.
+      temperature: hasInstruction ? TEMPERATURE.mixed : TEMPERATURE.prose,
     });
     const answers = parseAnswerArray(text);
     if (answers.length === 0) {

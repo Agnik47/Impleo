@@ -14,6 +14,9 @@ import {
   generateAnswers as generateAnswersFromModel,
   regenerateAnswer,
 } from './lib/generate.js';
+import { scoreFormRelevance } from './lib/formRelevance.js';
+import { shouldSendPageContext } from './lib/settings.js';
+import { extractPageContext } from '../../content-scripts/page-context.js';
 import ReviewCard from './components/ReviewCard.jsx';
 import { extractGoogleForm } from '../../content-scripts/google-forms.js';
 import { extractLumaForm } from '../../content-scripts/luma.js';
@@ -104,6 +107,17 @@ export default function ReviewFlow() {
   const [uploadFields, setUploadFields] = useState([]);
   const [uploadReview, setUploadReview] = useState({});
   const [documents, setDocuments] = useState([]);
+  // { relevant: boolean } | null — set only for the generic extractor (Google
+  // Forms/Luma are already hostname-confirmed real forms). A dismissible
+  // signal, never a block; see lib/formRelevance.js.
+  const [relevanceWarning, setRelevanceWarning] = useState(null);
+  // What the user is applying to, captured once at extraction time (see
+  // content-scripts/page-context.js). Held in a ref rather than state because
+  // only Regenerate reads it, and re-rendering every card when it lands would
+  // be pure churn — nothing displays it. Regenerating without it would quietly
+  // produce a WORSE answer than the original, which is the opposite of what
+  // the button promises.
+  const opportunityRef = useRef(null);
 
   // chrome.storage.session persistence, keyed per tab. Reopening the side panel
   // (or bouncing to Settings and back, which remounts this component) must
@@ -146,6 +160,7 @@ export default function ReviewFlow() {
             setReviewState(restoredReview);
             setFillReport(stored.fillReport ?? null);
             setErrorMessage(stored.errorMessage ?? null);
+            setRelevanceWarning(stored.relevanceWarning ?? null);
             setUploadFields(stored.uploadFields ?? []);
             // A persisted 'uploading' is a lie by the time we read it — the panel
             // closed mid-injection, so the executeScript result was never observed.
@@ -196,6 +211,7 @@ export default function ReviewFlow() {
       reviewState,
       fillReport,
       errorMessage,
+      relevanceWarning,
       // uploadFields/uploadReview only — never `documents`. Persisting document
       // metadata would let a stale, deleted, or renamed document render from session
       // storage; it's cheap to re-fetch and the server is the only source of truth.
@@ -205,7 +221,7 @@ export default function ReviewFlow() {
       uploadReview,
     };
     chrome.storage.session.set({ [tabKeyRef.current]: snapshot }).catch(() => {});
-  }, [phase, platform, formSchema, reviewState, fillReport, errorMessage, uploadFields, uploadReview]);
+  }, [phase, platform, formSchema, reviewState, fillReport, errorMessage, relevanceWarning, uploadFields, uploadReview]);
 
   function resetFlow() {
     setPhase('idle');
@@ -214,6 +230,7 @@ export default function ReviewFlow() {
     setFormSchema([]);
     setReviewState({});
     setFillReport(null);
+    setRelevanceWarning(null);
     setUploadFields([]);
     setUploadReview({});
     setDocuments([]);
@@ -305,17 +322,20 @@ export default function ReviewFlow() {
     [updateReview]
   );
 
-  async function generateAnswers(schema) {
+  async function generateAnswers(schema, opportunity = null) {
     setPhase('generating');
     try {
       const { answers } = await generateAnswersFromModel(
-        schema.map(({ id, questionText, fieldType, options, required }) => ({
+        schema.map(({ id, questionText, fieldType, options, required, description, labelConfidence }) => ({
           id,
           questionText,
           fieldType,
           options,
           required,
-        }))
+          ...(description ? { description } : {}),
+          ...(labelConfidence ? { labelConfidence } : {}),
+        })),
+        opportunity
       );
       const nextReviewState = {};
       for (const q of schema) {
@@ -450,6 +470,13 @@ export default function ReviewFlow() {
       // the state set above won't have flushed yet.
       formSchemaRef.current = schema || [];
 
+      // Generic pages only — Google Forms/Luma are already confirmed real
+      // forms by hostname, so running the keyword heuristic there risks a
+      // spurious warning on a legitimately short/unusual form.
+      setRelevanceWarning(
+        detectedPlatform === 'generic' ? scoreFormRelevance(schema || [], tab.title || '') : null
+      );
+
       // A page with only an upload field is a complete, reviewable form now; before
       // this feature it was a dead end. Skip the (paid) generate call in that case
       // rather than asking a model to answer nothing.
@@ -460,7 +487,26 @@ export default function ReviewFlow() {
         return;
       }
 
-      await generateAnswers(schema);
+      // What the user is applying TO. Best-effort by design: a page that
+      // refuses to yield a description still gets answered, just without the
+      // grounding — never a reason to fail an extraction that otherwise
+      // worked. Skipped entirely (page not read at all) when the user has
+      // turned the setting off.
+      let opportunity = null;
+      if (await shouldSendPageContext()) {
+        try {
+          const [{ result }] = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: extractPageContext,
+          });
+          if (result) opportunity = { ...result, url: tab.url || '' };
+        } catch {
+          opportunity = null;
+        }
+      }
+      opportunityRef.current = opportunity;
+
+      await generateAnswers(schema, opportunity);
       await loadUploadContext(uploads, tab);
     } catch (err) {
       setPhase('error');
@@ -594,9 +640,12 @@ export default function ReviewFlow() {
             fieldType: question.fieldType,
             options: question.options,
             required: question.required,
+            ...(question.description ? { description: question.description } : {}),
+            ...(question.labelConfidence ? { labelConfidence: question.labelConfidence } : {}),
           },
           instruction,
-          currentAnswer
+          currentAnswer,
+          opportunityRef.current
         );
         const canonicalKey = answer.canonicalKey ?? null;
         const fromMemory = Boolean(answer.fromMemory);
@@ -868,6 +917,20 @@ export default function ReviewFlow() {
       {(phase === 'reviewing' || phase === 'filling') && (
         <>
           {allFilledSuccessfully && <CompletionState />}
+
+          {relevanceWarning && !relevanceWarning.relevant && (
+            <div className="flex items-start justify-between gap-2 rounded-card border border-signature/30 bg-signature/10 p-2.5 text-body text-signature">
+              <p className="min-w-0 break-words">
+                This page may not be an application form — double-check the fields below before filling.
+              </p>
+              <button
+                onClick={() => setRelevanceWarning(null)}
+                className="shrink-0 text-caption text-signature/80 hover:text-signature"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
 
           <div className="glass-surface min-w-0 space-y-2 rounded-card p-3 shadow-soft-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">

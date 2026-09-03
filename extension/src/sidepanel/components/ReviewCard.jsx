@@ -134,11 +134,22 @@ function ReviewCard({ question, review, fillResult, onAccept, onEdit, onInject, 
           <p className="min-w-0 break-words text-card text-ink-primary">
             {review?.canonicalLabel || question.questionText}
             {question.required && <span className="text-signature"> *</span>}
+            {question.labelConfidence === 'low' && (
+              <span
+                className="ml-1 text-caption text-signature"
+                title="This field's label could not be reliably determined from the page"
+              >
+                ⚠ label uncertain
+              </span>
+            )}
           </p>
           {review?.canonicalLabel && question.questionText && (
             <p className="min-w-0 break-words text-caption text-ink-muted">
               from field: {question.questionText}
             </p>
+          )}
+          {question.description && (
+            <p className="min-w-0 break-words text-caption text-ink-muted">{question.description}</p>
           )}
           {review?.classificationSource === 'unresolved' && (
             <p className="min-w-0 break-words text-caption text-signature">

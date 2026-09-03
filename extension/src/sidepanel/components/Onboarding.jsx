@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { exportProfile } from '../lib/importExport.js';
-import { testApiKey, saveSettings } from '../lib/settings.js';
+import { testApiKey, saveSettings, setSendPageContext as setSendPageContextSetting } from '../lib/settings.js';
 import { saveProfile } from '../lib/profile.js';
+import { splitName } from '../lib/fieldRouter.js';
 import Tabs from './extension-ui/Tabs/Tabs.jsx';
 import ImportProfileModal from './ImportProfileModal.jsx';
 import WelcomeWizard from './WelcomeWizard.jsx';
@@ -10,7 +11,7 @@ import LearnedAnswersManager from './LearnedAnswersManager.jsx';
 import IdentityDocumentsManager from './IdentityDocumentsManager.jsx';
 
 const emptyForm = {
-  personal: { name: '', email: '', phone: '', location: '' },
+  personal: { name: '', firstName: '', lastName: '', email: '', phone: '', location: '' },
   links: { linkedin: '', github: '', portfolio: '' },
   education: '',
   skills: '',
@@ -24,8 +25,17 @@ const emptyForm = {
 
 function profileToFormState(profile) {
   if (!profile) return emptyForm;
+  const personal = { ...emptyForm.personal, ...profile.personal };
+  // Pre-fill a starting value for anyone who hasn't set these explicitly yet
+  // (new field, existing profiles) — editable, and becomes an explicit saved
+  // value the next time the form is saved.
+  if (!personal.firstName && !personal.lastName && personal.name) {
+    const derived = splitName(personal.name);
+    personal.firstName = derived.firstName;
+    personal.lastName = derived.lastName;
+  }
   return {
-    personal: { ...emptyForm.personal, ...profile.personal },
+    personal,
     links: { ...emptyForm.links, ...profile.links },
     education: profile.education ?? '',
     skills: (profile.skills ?? []).join(', '),
@@ -125,6 +135,22 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+
+  // Defaults on for an install that has never chosen — see settings.js's
+  // pageContextEnabled. Written straight through on toggle rather than waiting
+  // for "Save profile": this is a privacy switch, and a user who turns it off
+  // and closes the panel must not find it still on.
+  const [sendPageContext, setSendPageContext] = useState(initialSettings?.sendPageContext !== false);
+
+  async function handleSendPageContextChange(next) {
+    setSendPageContext(next);
+    try {
+      await setSendPageContextSetting(next);
+    } catch (err) {
+      setSendPageContext(!next); // don't show it as off if the write failed
+      setSaveError(`Couldn't save that preference: ${err.message}`);
+    }
+  }
 
   // Profile backup. Export stays inline (a single click, no confirmation needed —
   // it's non-destructive). Import opens ImportProfileModal, which owns its own
@@ -268,13 +294,28 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
             aria-labelledby="tab-profile"
             className={activeTab === 'profile' ? '' : 'hidden'}
           >
-            <Section label="Personal info">
+            <Section
+              label="Personal info"
+              hint="First/Last Name are optional and auto-fill by splitting Name — edit them if the split looks wrong (e.g. multi-word first names)."
+            >
               <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
                 <input
                   className={inputClass}
                   placeholder="Name"
                   value={form.personal.name}
                   onChange={(e) => updateField('personal', 'name', e.target.value)}
+                />
+                <input
+                  className={inputClass}
+                  placeholder="First name (optional)"
+                  value={form.personal.firstName}
+                  onChange={(e) => updateField('personal', 'firstName', e.target.value)}
+                />
+                <input
+                  className={inputClass}
+                  placeholder="Last name (optional)"
+                  value={form.personal.lastName}
+                  onChange={(e) => updateField('personal', 'lastName', e.target.value)}
                 />
                 <input
                   className={inputClass}
@@ -475,6 +516,31 @@ export default function Onboarding({ initialProfile, initialSettings, onSaved })
                   </span>
                 )}
               </div>
+            </Section>
+
+            <Section
+              label="Page context"
+              hint="Whether Impleo reads a short description of the page you're applying to and sends it with your questions."
+            >
+              <label className="flex cursor-pointer items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={sendPageContext}
+                  onChange={(e) => handleSendPageContextChange(e.target.checked)}
+                  className="mt-1 shrink-0"
+                />
+                <span className="text-body text-ink-primary">
+                  Send page context with my questions
+                  <span className="mt-1 block text-caption text-ink-secondary">
+                    Reads the page title, the organisation name, and the description above the
+                    form — capped at about 1,200 characters — so answers to questions like
+                    &ldquo;why do you want to join?&rdquo; are about this specific opportunity
+                    instead of being written blind. This is the only thing Impleo sends to your
+                    AI provider besides your own questions and profile. Turn it off and the page
+                    is never read at all.
+                  </span>
+                </span>
+              </label>
             </Section>
           </div>
 

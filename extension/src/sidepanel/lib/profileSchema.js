@@ -66,7 +66,7 @@ export function validateProfile(profile) {
     throw new Error('"profile" must be an object.');
   }
   return {
-    personal: validatePersonalOrLinks(profile.personal, 'personal', ['name', 'email', 'phone', 'location']),
+    personal: validatePersonalOrLinks(profile.personal, 'personal', ['name', 'firstName', 'lastName', 'email', 'phone', 'location']),
     links: validatePersonalOrLinks(profile.links, 'links', ['linkedin', 'github', 'portfolio']),
     education: str(profile.education),
     skills: strArray(profile.skills, 'skills'),

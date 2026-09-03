@@ -17,6 +17,20 @@ export const CANONICAL_FIELDS = [
     aliases: ['full name', 'name', 'applicant name', 'candidate name', 'your name', 'नाम', 'पूरा नाम'],
   },
   {
+    key: 'first_name',
+    label: 'First Name',
+    type: 'text',
+    sensitive: false,
+    aliases: ['first name', 'given name', 'forename'],
+  },
+  {
+    key: 'last_name',
+    label: 'Last Name',
+    type: 'text',
+    sensitive: false,
+    aliases: ['last name', 'surname', 'family name'],
+  },
+  {
     key: 'father_name',
     label: "Father's Name",
     type: 'text',

@@ -46,6 +46,30 @@ export function extractGoogleForm() {
     return candidates.length > 0 ? candidates[0] : '(unlabeled question)';
   }
 
+  // Google Forms renders a question's optional description/help text as its
+  // own leaf div, right after the title div and before the answer widgets --
+  // the same DOM shape findQuestionTitle's fallback scan already builds a
+  // candidate list for. Reuses that exact list and takes whichever candidate
+  // comes right after the (unstripped) title text. Only returns a value when
+  // the title can actually be located in the candidate list -- if it can't
+  // (e.g. the [role="heading"] branch's text doesn't also show up as a leaf
+  // div, so there's no reliable "next" position), this returns undefined
+  // rather than guessing, since a wrong description would actively mislead
+  // the reviewing user. UNVERIFIED against a real live Google Form -- see the
+  // file-level note above; needs inspection against 2-3 real forms with
+  // actual description text before this is trustworthy.
+  function findQuestionDescription(container, rawTitleText, optionTexts) {
+    const seenOptions = new Set((optionTexts || []).map((t) => String(t || '').trim()).filter(Boolean));
+    const candidates = Array.from(container.querySelectorAll('div'))
+      .filter((d) => d.querySelectorAll('div').length === 0)
+      .map((d) => textOf(d))
+      .filter((t) => t.length > 0 && !MARKER_ONLY_RE.test(t) && !seenOptions.has(t) && t !== 'Required');
+    const titleIdx = candidates.indexOf(rawTitleText);
+    if (titleIdx === -1) return undefined;
+    const description = candidates[titleIdx + 1];
+    return description && description.trim() ? stripTrailingMarker(description) : undefined;
+  }
+
   function isRequired(container) {
     return textOf(container).includes('*') || container.querySelector('[aria-label*="Required"]') !== null;
   }
@@ -86,35 +110,47 @@ export function extractGoogleForm() {
 
     if (radios.length > 0) {
       const options = radios.map((r) => r.getAttribute('aria-label') || r.getAttribute('data-value') || textOf(r));
-      const questionText = stripTrailingMarker(findQuestionTitle(item, options));
+      const rawTitle = findQuestionTitle(item, options);
+      const questionText = stripTrailingMarker(rawTitle);
+      const description = findQuestionDescription(item, rawTitle, options);
       const id = stampId(radios);
-      results.push({ id, questionText, fieldType: 'radio', options, required, selector: `[data-impleo-id="${id}"]` });
+      results.push({ id, questionText, fieldType: 'radio', options, required, selector: `[data-impleo-id="${id}"]`, ...(description ? { description } : {}) });
     } else if (checkboxes.length > 0) {
       const options = checkboxes.map(
         (c) => c.getAttribute('aria-label') || c.getAttribute('data-answer-value') || textOf(c)
       );
-      const questionText = stripTrailingMarker(findQuestionTitle(item, options));
+      const rawTitle = findQuestionTitle(item, options);
+      const questionText = stripTrailingMarker(rawTitle);
+      const description = findQuestionDescription(item, rawTitle, options);
       const fieldType = checkboxes.length > 1 ? 'checkbox' : 'checkbox_single';
       const id = stampId(checkboxes);
-      results.push({ id, questionText, fieldType, options, required, selector: `[data-impleo-id="${id}"]` });
+      results.push({ id, questionText, fieldType, options, required, selector: `[data-impleo-id="${id}"]`, ...(description ? { description } : {}) });
     } else if (listboxes.length > 0) {
       const listbox = listboxes[0];
       const options = Array.from(listbox.querySelectorAll('[role="option"]')).map(textOf).filter(Boolean);
-      const questionText = stripTrailingMarker(findQuestionTitle(item, options));
+      const rawTitle = findQuestionTitle(item, options);
+      const questionText = stripTrailingMarker(rawTitle);
+      const description = findQuestionDescription(item, rawTitle, options);
       const id = stampId([listbox]);
-      results.push({ id, questionText, fieldType: 'dropdown', options, required, selector: `[data-impleo-id="${id}"]` });
+      results.push({ id, questionText, fieldType: 'dropdown', options, required, selector: `[data-impleo-id="${id}"]`, ...(description ? { description } : {}) });
     } else if (textareas.length > 0) {
-      const questionText = stripTrailingMarker(findQuestionTitle(item, []));
+      const rawTitle = findQuestionTitle(item, []);
+      const questionText = stripTrailingMarker(rawTitle);
+      const description = findQuestionDescription(item, rawTitle, []);
       const id = stampId([textareas[0]]);
-      results.push({ id, questionText, fieldType: 'textarea', options: [], required, selector: `[data-impleo-id="${id}"]` });
+      results.push({ id, questionText, fieldType: 'textarea', options: [], required, selector: `[data-impleo-id="${id}"]`, ...(description ? { description } : {}) });
     } else if (fileInputs.length > 0) {
-      const questionText = stripTrailingMarker(findQuestionTitle(item, []));
+      const rawTitle = findQuestionTitle(item, []);
+      const questionText = stripTrailingMarker(rawTitle);
+      const description = findQuestionDescription(item, rawTitle, []);
       const id = stampId([fileInputs[0]]);
-      results.push({ id, questionText, fieldType: 'upload', options: [], required, selector: `[data-impleo-id="${id}"]` });
+      results.push({ id, questionText, fieldType: 'upload', options: [], required, selector: `[data-impleo-id="${id}"]`, ...(description ? { description } : {}) });
     } else if (textInputs.length > 0) {
-      const questionText = stripTrailingMarker(findQuestionTitle(item, []));
+      const rawTitle = findQuestionTitle(item, []);
+      const questionText = stripTrailingMarker(rawTitle);
+      const description = findQuestionDescription(item, rawTitle, []);
       const id = stampId([textInputs[0]]);
-      results.push({ id, questionText, fieldType: 'text', options: [], required, selector: `[data-impleo-id="${id}"]` });
+      results.push({ id, questionText, fieldType: 'text', options: [], required, selector: `[data-impleo-id="${id}"]`, ...(description ? { description } : {}) });
     }
   }
 

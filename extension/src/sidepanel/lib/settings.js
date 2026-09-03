@@ -19,7 +19,25 @@ const EMPTY_SETTINGS = Object.freeze({
   gemini_model: null,
   openai_model: null,
   groq_model: null,
+  // Whether to send a short description of the page being applied to (title,
+  // organisation, the pitch above the form) along with the questions.
+  //
+  // Defaults ON because it is the difference between "why do you want to
+  // join?" being answered about this specific programme and being answered
+  // about nothing. But it is the only thing that sends page CONTENT to the
+  // provider — every other call sends the questions and the user's own
+  // profile — so it is a real privacy choice and gets a real switch. Stored
+  // as null-means-default so existing installs pick up the default rather
+  // than reading a missing key as "off".
+  send_page_context: null,
 });
+
+// Read as a boolean with the default applied. Kept as a function rather than
+// baked into EMPTY_SETTINGS so "never chosen" stays distinguishable from
+// "explicitly turned on" if that distinction is ever needed.
+export function pageContextEnabled(row) {
+  return row?.send_page_context !== false;
+}
 
 async function readSettingsRow() {
   await ensureStorageVersion();
@@ -41,7 +59,28 @@ export async function getSettings() {
     model: row[MODEL_COLUMN[id]] || '',
     defaultModel: DEFAULT_MODELS[id],
   }));
-  return { provider: row.provider || null, providers };
+  return {
+    provider: row.provider || null,
+    providers,
+    sendPageContext: pageContextEnabled(row),
+  };
+}
+
+// Separate from saveSettings() because that function requires a provider and
+// treats the call as "make this provider active" — a privacy toggle has
+// nothing to do with which model is selected and shouldn't be able to switch
+// it as a side effect.
+export async function setSendPageContext(enabled) {
+  const row = await readSettingsRow();
+  row.send_page_context = Boolean(enabled);
+  await writeKey(STORAGE_KEYS.SETTINGS, row);
+  return { ok: true };
+}
+
+// What ReviewFlow asks before deciding whether to read the page at all. If
+// this is false the page is never touched, rather than read-and-discarded.
+export async function shouldSendPageContext() {
+  return pageContextEnabled(await readSettingsRow());
 }
 
 // Saves a key and/or model for `provider` and makes it the active one.

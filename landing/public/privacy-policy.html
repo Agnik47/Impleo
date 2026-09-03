@@ -40,7 +40,7 @@
     <main>
       <a class="back" href="/">← Back to Impleo</a>
       <h1>Impleo — Privacy Policy</h1>
-      <p class="updated"><strong>Last updated:</strong> 2026-07-17</p>
+      <p class="updated"><strong>Last updated:</strong> 2026-08-29</p>
 
       <h2>The short version</h2>
       <p>
@@ -72,6 +72,7 @@
           <tr><td>Q&amp;A history (last 50 approved answers)</td><td><code>chrome.storage.local</code></td><td>Only as tone/context in a generation request</td></tr>
           <tr><td>Identity documents (resume/CV/portfolio — PDF, DOC, DOCX; up to 3)</td><td><code>IndexedDB</code></td><td><strong>Never.</strong> See "Your documents" below.</td></tr>
           <tr><td>Which document you last chose per website</td><td><code>chrome.storage.local</code></td><td>No</td></tr>
+          <tr><td>A short description of the page you're applying to</td><td>Not stored — read at extraction time and discarded</td><td>Only as part of a generation request, and only while the setting is on</td></tr>
         </tbody>
       </table>
 
@@ -101,6 +102,24 @@
         <li><strong>Sensitive government/financial IDs — Aadhaar number, PAN number, passport number, and date of birth — are never sent to the AI provider.</strong> When a form asks for one of these, Impleo recognises the field locally and fills it from your remembered value on your own machine; the value itself is never placed in the text sent to the provider.</li>
         <li>Your resume text and writing sample are only included when a question actually needs them (an essay question), and are omitted entirely for forms that only ask for short factual fields.</li>
       </ul>
+      <p>
+        <strong>Page context.</strong> The request also includes a short description of the page
+        you're applying to: its title, the organisation's name, the main heading, and the most
+        substantial paragraph above the form — about 1,200 characters at most. This is the only
+        page content Impleo sends; everything else in the request is your own profile and the
+        form's own questions.
+      </p>
+      <p>
+        It exists because without it the AI is given your questions and nothing else, so an answer
+        to &ldquo;why do you want to join?&rdquo; has no idea what you're joining, and comes out
+        generic.
+      </p>
+      <p>
+        You can turn it off in <strong>Settings → AI provider → &ldquo;Send page context with my
+        questions&rdquo;</strong>. It is on by default. When it's off, Impleo does not read the
+        page description at all — it isn't read and then withheld. If you're filling a form on a
+        page whose contents are confidential, turn this off before extracting.
+      </p>
       <p>
         <strong>Your API key</strong> is sent to that provider as the request's authentication
         header, which is the only way an API key can work. It is not sent anywhere else, ever.

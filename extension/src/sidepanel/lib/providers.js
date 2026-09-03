@@ -46,7 +46,16 @@ function apiError(status, message) {
 }
 
 // --- Anthropic (Messages API) ---
-async function anthropicChat({ apiKey, model, systemPrompt, userContent, maxTokens }) {
+// `temperature` is optional on every adapter below. When the caller doesn't
+// pass one the key is omitted entirely rather than defaulted here, so the
+// provider's own default still applies — a `temperature: undefined` in a JSON
+// body would be dropped anyway, but being explicit stops a future refactor
+// from accidentally pinning every provider to one vendor's idea of neutral.
+function withTemperature(body, temperature) {
+  return typeof temperature === 'number' ? { ...body, temperature } : body;
+}
+
+async function anthropicChat({ apiKey, model, systemPrompt, userContent, maxTokens, temperature }) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -58,12 +67,17 @@ async function anthropicChat({ apiKey, model, systemPrompt, userContent, maxToke
       // reaches model inference, regardless of how valid the key is.
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userContent }],
-    }),
+    body: JSON.stringify(
+      withTemperature(
+        {
+          model,
+          max_tokens: maxTokens,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userContent }],
+        },
+        temperature
+      )
+    ),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -81,21 +95,26 @@ async function anthropicChat({ apiKey, model, systemPrompt, userContent, maxToke
 // The system prompt goes in as a leading system message rather than a separate
 // field, which is the one shape difference from Anthropic above.
 function makeOpenAICompatible({ name, url }) {
-  return async function chat({ apiKey, model, systemPrompt, userContent, maxTokens }) {
+  return async function chat({ apiKey, model, systemPrompt, userContent, maxTokens, temperature }) {
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userContent },
-        ],
-      }),
+      body: JSON.stringify(
+        withTemperature(
+          {
+            model,
+            max_tokens: maxTokens,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userContent },
+            ],
+          },
+          temperature
+        )
+      ),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -112,7 +131,7 @@ function makeOpenAICompatible({ name, url }) {
 // Different shape again: system prompt is `systemInstruction`, the user turn is
 // `contents`, the model rides in the URL path, and the key rides in a header
 // rather than Authorization: Bearer.
-async function geminiChat({ apiKey, model, systemPrompt, userContent, maxTokens }) {
+async function geminiChat({ apiKey, model, systemPrompt, userContent, maxTokens, temperature }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const res = await fetch(url, {
     method: 'POST',
@@ -123,7 +142,9 @@ async function geminiChat({ apiKey, model, systemPrompt, userContent, maxTokens 
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: systemPrompt }] },
       contents: [{ role: 'user', parts: [{ text: userContent }] }],
-      generationConfig: { maxOutputTokens: maxTokens },
+      // Gemini's odd one out: temperature belongs inside generationConfig
+      // rather than at the top level like the other three.
+      generationConfig: withTemperature({ maxOutputTokens: maxTokens }, temperature),
     }),
   });
   if (!res.ok) {
